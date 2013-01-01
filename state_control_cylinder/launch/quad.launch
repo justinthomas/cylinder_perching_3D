@@ -1,11 +1,12 @@
 <launch>
 
   <arg name="model" default="QuadrotorAlpha" />
-  <arg name="cylinder_radius" default="0.1" /> 
-  <arg name="mass" default="0.67" />
-
+  
   <group ns="$(arg model)">
-   
+    
+    <param name="cylinder_radius" value="0.04" /> 
+    <param name="mass" value="0.73" />
+  
     <node pkg="nodelet"
       type="nodelet"
       name="standalone_nodelet"
@@ -65,10 +66,10 @@
       <remap from="~corrections" to="corrections"/>
       <remap from="~so3_cmd" to="so3_cmd"/>
       <rosparam file="$(find state_control_cylinder)/config/hummingbird_gains.yaml"/>
-      <param name="mass" value="$(arg mass)"/>
     </node>
     
     <!-- This is the state control node -->
+    <rosparam file="$(find state_control_cylinder)/config/vision_params.yaml" />
     <node pkg="state_control_cylinder"
 	    type="state_control"
 	    name="state_control"
@@ -76,13 +77,13 @@
       <rosparam file="$(find state_control_cylinder)/config/$(arg model)_params.yaml" />
       <rosparam file="$(find state_control_cylinder)/config/hummingbird_gains.yaml" />
       <param name="safety_catch" value="true"/>
+      <!-- remap from="so3_cmd" to="so3_cmd_vision"/ -->
     </node>
 
     <node pkg="process_image_features"
       type="process_image_features"
       name="process_image_features"
       output="screen">
-      <param name="cylinder_radius" value="$(arg cylinder_radius)"/>
       <param name="camera_fps" value="30"/>
     </node>
 
