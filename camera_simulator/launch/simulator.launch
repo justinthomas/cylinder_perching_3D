@@ -1,0 +1,17 @@
+<launch>
+
+  <arg name="model" default="quadrotor" />
+
+  <group ns="$(arg model)">
+
+    <node pkg="camera_simulator"
+      type="camera_simulator"
+      name="camera_simulator"
+      output="screen">
+      <param name="radius" value="0.1"/>
+      <remap from="~vision_status" to="vision_status"/>
+      <remap from="~image_features" to="image_features"/>
+    </node>
+
+  </group>
+</launch>

@@ -1,0 +1,14 @@
+<package>
+  <description brief="cylinder_msgs">
+
+     cylinder_msgs
+
+  </description>
+  <author>Justin Thomas</author>
+  <license>BSD</license>
+  <review status="unreviewed" notes=""/>
+  <url></url>
+  <depend package="geometry_msgs"/>
+</package>
+
+

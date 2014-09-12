@@ -1,28 +1,17 @@
-# Compiled Object files
-*.slo
-*.lo
+*~
+*.pyc
+_*.py
 *.o
-*.obj
-
-# Precompiled Headers
-*.gch
-*.pch
-
-# Compiled Dynamic libraries
 *.so
-*.dylib
-*.dll
+*.swp
+ROS_NOBUILD
 
-# Fortran module files
-*.mod
+build
+bin
+lib
 
-# Compiled Static libraries
-*.lai
-*.la
-*.a
-*.lib
+msg_gen
+srv_gen
 
-# Executables
-*.exe
-*.out
-*.app
+CMakeCache.txt
+*.bag
