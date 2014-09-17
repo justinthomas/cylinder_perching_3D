@@ -66,7 +66,7 @@ static void odom_cb(const nav_msgs::Odometry::ConstPtr &msg)
 
   tf::Vector3 a_Cam(R_WorldToCamera * a_World);
   // This is correct
-  ROS_INFO_THROTTLE(1, "\e[0;36ma:  {%2.2f, %2.2f, %2.2f}\033[0m", a_Cam[0], a_Cam[1], a_Cam[2]);
+  // ROS_INFO_THROTTLE(1, "\e[0;36ma:  {%2.2f, %2.2f, %2.2f}\033[0m", a_Cam[0], a_Cam[1], a_Cam[2]);
 
   // Correct
   tf::Transform T_WorldToCamera(R_WorldToCamera, R_WorldToCamera * (-1 * r_Cam_W));
@@ -74,7 +74,7 @@ static void odom_cb(const nav_msgs::Odometry::ConstPtr &msg)
 
   // Note: P1 is expressed in the camera frame, not the robot frame
   tf::Vector3 P1(T_WorldToCamera * r_Cyl_World);
-  ROS_INFO_THROTTLE(1, "\e[0;36mP1: {%2.2f, %2.2f, %2.2f}\033[0m", P1[0], P1[1], P1[2]);
+  // ROS_INFO_THROTTLE(1, "\e[0;36mP1: {%2.2f, %2.2f, %2.2f}\033[0m", P1[0], P1[1], P1[2]);
 
   tf::Vector3 P1_x_a(tf::tfCross(P1, a_Cam));
   // ROS_INFO("P1_x_a: {%2.2f, %2.2f, %2.2f}", P1_x_a[0], P1_x_a[1], P1_x_a[2]);
@@ -153,8 +153,8 @@ static void odom_cb(const nav_msgs::Odometry::ConstPtr &msg)
   wrapAngle(theta1);
   wrapAngle(theta2);
   
-  ROS_INFO_THROTTLE(1, "\e[0;36mp:  {rho1: %2.2f, rho2: %2.2f, theta1: %2.0f deg, theta2: %2.0f deg}\033[0m",
-    rho1, rho2, theta1 * 180 / M_PI, theta2 * 180 / M_PI);
+  // ROS_INFO_THROTTLE(1, "\e[0;36mp:  {rho1: %2.2f, rho2: %2.2f, theta1: %2.0f deg, theta2: %2.0f deg}\033[0m",
+  //  rho1, rho2, theta1 * 180 / M_PI, theta2 * 180 / M_PI);
 
   ////////////////////
   // Determine Pt1 //

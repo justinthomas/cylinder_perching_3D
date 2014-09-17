@@ -54,11 +54,11 @@ static void image_features_cb(const cylinder_msgs::ImageFeatures::ConstPtr &msg)
   tf::Vector3 b(msg->b.x, msg->b.y, msg->b.z);
   double delta = tfDot(a, b) * tfDot(P0, b) / (1 - pow(tfDot(a, b), 2));
   // ROS_INFO_THROTTLE(1, "delta from processor: %2.2f", delta);
-  ROS_INFO_THROTTLE(1, "\e[0;33mEst: a = {%2.2f, %2.2f, %2.2f}, delta: %2.2f, P0 = {%2.2f, %2.2f, %2.2f}\e[0m",
-      a[0], a[1], a[2], delta, P0[0], P0[1], P0[2]);
+  // ROS_INFO_THROTTLE(1, "\e[0;33mEst: a = {%2.2f, %2.2f, %2.2f}, delta: %2.2f, P0 = {%2.2f, %2.2f, %2.2f}\e[0m",
+  //     a[0], a[1], a[2], delta, P0[0], P0[1], P0[2]);
 
   tf::Vector3 P1 = P0 + (delta * a);
-  ROS_INFO_THROTTLE(1, "P1_est = {%2.2f, %2.2f, %2.2f}", P1[0], P1[1], P1[2]);
+  // ROS_INFO_THROTTLE(1, "P1_est = {%2.2f, %2.2f, %2.2f}", P1[0], P1[1], P1[2]);
 
   // Publish the info
   pif.stamp = msg->stamp;
