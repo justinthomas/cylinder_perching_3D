@@ -29,16 +29,9 @@ set(LIBRARY_OUTPUT_PATH ${PROJECT_SOURCE_DIR}/lib)
 #rosbuild_add_executable(example examples/example.cpp)
 #target_link_libraries(example ${PROJECT_NAME})
 
-#add_custom_target(
-#  libvicon_driver
-#  COMMAND make
-#  WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}/libvicon_driver
-#  )
-#
-#include_directories("libvicon_driver/include")
-
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
 
-#include_directories(${EIGEN3_INCLUDE_DIR})
+find_package(Eigen3 REQUIRED)
+include_directories(${EIGEN3_INCLUDE_DIR})
 
 rosbuild_add_executable(camera_simulator src/camera_simulator.cpp)

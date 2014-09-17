@@ -1,4 +1,7 @@
 #include <ros/ros.h>
+#include <math.h>
+#include <Eigen/Dense>
+#include <iostream>
 #include <geometry_msgs/Vector3.h>
 #include <geometry_msgs/Vector3Stamped.h>
 #include <geometry_msgs/Quaternion.h>
@@ -8,18 +11,20 @@
 #include <std_msgs/Float64.h>
 #include <tf/transform_datatypes.h>
 #include <tf/LinearMath/Matrix3x3.h>
-#include <math.h>
-#include <iostream>
 #include <tf/transform_broadcaster.h>
 #include <cylinder_msgs/ImageFeatures.h>
+
+using namespace tf;
+using namespace Eigen;
 using namespace std;
 
-static ros::Publisher pub_vision_status_;
+// static ros::Publisher pub_vision_status_;
 static ros::Publisher pub_image_features_;
 
 // Vision Stuff
-static tf::Transform T_Cam_to_Body_ = tf::Transform(tf::Matrix3x3(1,0,0, 0,-1,0, 0,0,-1), tf::Vector3(0,0,0));
-double cylinder_radius;
+static tf::Transform T_Cam_to_Body_ = tf::Transform(
+    tf::Matrix3x3(1,0,0, 0,-1,0, 0,0,-1), tf::Vector3(0,0,0));
+double r;
 
 // Quadrotor Pose
 static geometry_msgs::Point pos_;
@@ -28,6 +33,9 @@ static bool have_odom_ = false;
 
 // Function Declarations
 void print_tfVector3(tf::Vector3 vec);
+Eigen::Matrix3d hat(Eigen::Vector3d vec);
+Eigen::Vector3d Vec3TfToEigen(tf::Vector3 vec);
+void wrapAngle(double &angle);
 
 static void odom_cb(const nav_msgs::Odometry::ConstPtr &msg)
 {
@@ -41,147 +49,146 @@ static void odom_cb(const nav_msgs::Odometry::ConstPtr &msg)
   tf::quaternionMsgToTF(ori_, q);
   tf::Matrix3x3(q).getEulerYPR(yaw, pitch, roll);
 
-  tf::Vector3 r_cyl_world(0, 0, -2*cylinder_radius);
+  static tf::Vector3 r_Cyl_World(0, 0, -2*r);
   tf::Vector3 r_Cam_W(pos_.x, pos_.y, pos_.z);
 
-  double rho1, rho2, ctheta1, ctheta2, stheta1, stheta2;
+  static double rho1, rho2;
 
-  tf::Vector3 Axis_of_Cylinder_in_World(1,0,0);
-
+  // Note: These are coupled through yaw.  Can't change one without changing the other
+  tf::Vector3 a_World(1,0,0);
   tf::Matrix3x3 R_B_W(q);
+  //
+  
   tf::Vector3 r_B_W(pos_.x, pos_.y, pos_.z);
 
   tf::Matrix3x3 R_CameraToBody (T_Cam_to_Body_.getBasis());
   tf::Matrix3x3 R_WorldToCamera(R_CameraToBody.transpose() * R_B_W.transpose());
 
-  tf::Vector3 Axis_of_Cylinder_in_Camera(R_WorldToCamera * Axis_of_Cylinder_in_World);
+  tf::Vector3 a_Cam(R_WorldToCamera * a_World);
   // This is correct
-  // print_tfVector3(Axis_of_Cylinder_in_Camera);
+  ROS_INFO_THROTTLE(1, "\e[0;36ma:  {%2.2f, %2.2f, %2.2f}\033[0m", a_Cam[0], a_Cam[1], a_Cam[2]);
 
-  tf::Transform World_to_Camera_Transform(R_WorldToCamera, R_WorldToCamera * (-1.0 * r_Cam_W));
+  // Correct
+  tf::Transform T_WorldToCamera(R_WorldToCamera, R_WorldToCamera * (-1 * r_Cam_W));
+  // print_tfVector3(T_WorldToCamera * tf::Vector3(0,0,0));
 
   // Note: P1 is expressed in the camera frame, not the robot frame
-  tf::Vector3 P1(World_to_Camera_Transform * r_cyl_world);
-  // print_tfVector3(P1);
+  tf::Vector3 P1(T_WorldToCamera * r_Cyl_World);
+  ROS_INFO_THROTTLE(1, "\e[0;36mP1: {%2.2f, %2.2f, %2.2f}\033[0m", P1[0], P1[1], P1[2]);
 
-  tf::Vector3 Numerator(tf::tfCross(P1, Axis_of_Cylinder_in_Camera));
+  tf::Vector3 P1_x_a(tf::tfCross(P1, a_Cam));
+  // ROS_INFO("P1_x_a: {%2.2f, %2.2f, %2.2f}", P1_x_a[0], P1_x_a[1], P1_x_a[2]);
 
-  // ROS_INFO("Numerator: {%2.2f, %2.2f, %2.2f}", Numerator[0], Numerator[1], Numerator[2]);
-
-  tf::Vector3 Normed_Vec(Numerator / sqrt(tf::tfDot(Numerator, Numerator)));
-
-  //ROS_INFO("Normal Numerator: {%2.2f, %2.2f, %2.2f}", Normal_Numerator[0], Normal_Numerator[1], Normal_Numerator[2]);
-
-  tf::Vector3 h(tf::tfCross(Axis_of_Cylinder_in_Camera, Normed_Vec));
+  tf::Vector3 h(tf::tfCross(
+        a_Cam,
+        P1_x_a / sqrt(tf::tfDot(P1_x_a, P1_x_a))));
 
   // ROS_INFO("h:{%2.2f, %2.2f, %2.2f}", h[0], h[1], h[2]);
+  // ROS_INFO_THROTTLE(1, "h_mag: {%2.2f}", std::sqrt(tf::tfDot(h, h)));
 
-  double P0_Length = tf::tfDot(P1, h);
+  // P0 length = tf::tfDot(P1, h)
+  tf::Vector3 P0 = tf::tfDot(P1, h) * h;
 
-  tf::Vector3 P0 = P0_Length*h;
+  // This is only temp
+  tf::Vector3 temp = P0 / sqrt(tf::tfDot(P0, P0));
+  // ROS_INFO_THROTTLE(1, "P0 =         {%2.2f, %2.2f, %2.2f}", temp[0], temp[1], temp[2]); //,, P1 = {%2.2f, %2.2f, %2.2f}", P0[0], P0[1], P0[2], P1[0], P1[1], P1[2]);
 
+  double A = sqrt(tf::tfDot(P0,P0) - r*r);
 
-  // ROS_INFO("P0 = {%2.2f, %2.2f, %2.2f}, P1 = {%2.2f, %2.2f, %2.2f}", x0, y0, z0, P1[0], P1[1], P1[2]);
+  double theta1, theta2;
 
-  double A = sqrt(tf::tfDot(P0,P0) - pow((cylinder_radius), 2));
-
-  double x0 = P0[0];
-  double y0 = P0[1];
-  double z0 = P0[2];
-
-  double a = Axis_of_Cylinder_in_Camera[0];
-  double b = Axis_of_Cylinder_in_Camera[1];
-  double c = Axis_of_Cylinder_in_Camera[2];
-
-  double alpha = y0*c - z0*b;
-  double beta = z0*a - x0*c;
-  double gamma = x0*b - y0*a;
-
-  rho1 = (cylinder_radius*z0/A - gamma)/
-  	sqrt(pow(cylinder_radius*x0/A - alpha, 2) + pow(cylinder_radius*y0/A - beta, 2));
-
-  rho2 = (cylinder_radius*z0/A + gamma)/
-  	sqrt(pow(cylinder_radius*x0/A + alpha, 2) + pow(cylinder_radius*y0/A + beta, 2));
-
-  ctheta1 = (cylinder_radius*x0/A - alpha)/
-  	sqrt(pow(cylinder_radius*x0/A - alpha, 2) + pow(cylinder_radius*y0/A - beta, 2));
-
-  ctheta2 = (cylinder_radius*x0/A + alpha)/
-  	sqrt(pow(cylinder_radius*x0/A + alpha, 2) + pow(cylinder_radius*y0/A + beta, 2));
-
-  stheta1 = (cylinder_radius*y0/A - beta)/
-  	sqrt(pow(cylinder_radius*x0/A - alpha, 2) + pow(cylinder_radius*y0/A - beta, 2));
-
-  stheta2 = (cylinder_radius*y0/A + beta)/
-  	sqrt(pow(cylinder_radius*x0/A + alpha, 2) + pow(cylinder_radius*y0/A + beta, 2));
-
-  double theta1 = atan2(stheta1, ctheta1);
-  double theta2 = atan2(stheta2, ctheta2);
-
-  // Handle angle wrapping
-  if (rho1 < 0)
+  // Let's keep these variables in this scope (later we will want to use b)
   {
-  	rho1 = - rho1;
-  	theta1 = theta1 - M_PI;
+    // Note that the convention is different than the modern day standard.  See Espiau, 1992.
+    double x0 = -P0[0];
+    double y0 = -P0[1];
+    double z0 = P0[2];
+
+    // Also, different convention
+    double a = -a_Cam[0];
+    double b = -a_Cam[1];
+    double c = a_Cam[2];
+
+    double alpha = y0*c - z0*b;
+    double beta = z0*a - x0*c;
+    double gamma = x0*b - y0*a;
+
+    rho1 = (r*z0/A - gamma)/
+    	sqrt(pow(r*x0/A - alpha, 2) + pow(r*y0/A - beta, 2));
+
+    rho2 = (r*z0/A + gamma)/
+    	sqrt(pow(r*x0/A + alpha, 2) + pow(r*y0/A + beta, 2));
+
+    double ctheta1, ctheta2, stheta1, stheta2;
+
+    ctheta1 = (r*x0/A - alpha)/
+    	sqrt(pow(r*x0/A - alpha, 2) + pow(r*y0/A - beta, 2));
+
+    ctheta2 = (r*x0/A + alpha)/
+    	sqrt(pow(r*x0/A + alpha, 2) + pow(r*y0/A + beta, 2));
+
+    stheta1 = (r*y0/A - beta)/
+    	sqrt(pow(r*x0/A - alpha, 2) + pow(r*y0/A - beta, 2));
+
+    stheta2 = (r*y0/A + beta)/
+    	sqrt(pow(r*x0/A + alpha, 2) + pow(r*y0/A + beta, 2));
+
+    theta1 = atan2(stheta1, ctheta1);
+    theta2 = atan2(stheta2, ctheta2);
   }
 
-  if (rho2 < 0)
-  {
-  	rho2 = - rho2;
-  	theta2 = theta2 - M_PI;
-  }
+  // Handle the case when rho1 or rho2 are less than zero
+  // if (rho1 < 0)
+  // {
+  // 	rho1 = - rho1;
+  // 	theta1 = theta1 - M_PI;
+  // }
+  // if (rho2 < 0)
+  // {
+  // 	rho2 = - rho2;
+  // 	theta2 = theta2 - M_PI;
+  // }
 
-  if (theta1 < -M_PI)
-  	theta1 += 2*M_PI;
+  // Wrap to -Pi to Pi
+  wrapAngle(theta1);
+  wrapAngle(theta2);
+  
+  ROS_INFO_THROTTLE(1, "\e[0;36mp:  {rho1: %2.2f, rho2: %2.2f, theta1: %2.0f deg, theta2: %2.0f deg}\033[0m",
+    rho1, rho2, theta1 * 180 / M_PI, theta2 * 180 / M_PI);
 
-  if (theta2 < -M_PI)
-  	theta2 += 2*M_PI;
+  ////////////////////
+  // Determine Pt1 //
+  //////////////////
 
-  ROS_INFO_THROTTLE(1, "Image coordinates: {rho1: %2.2f, rho2: %2.2f, theta1: %2.0f deg, theta2: %2.0f deg}",
-      rho1, rho2, theta1 * 180 / M_PI, theta2 * 180 / M_PI);
+  // From eq (9)
+  // double gamma = std::sqrt(tf::tfDot(P0, P0) - r*r); // Note: this is the same as A in Chaumette 1994
+  Vector3d a = Vec3TfToEigen(a_Cam);
+  // eq (15) to determine the direction of Pt0
+  Vector3d d = (A * hat(a) - r * Matrix3d::Identity()).inverse() * hat(a) * Vec3TfToEigen(P0);
+  Vector3d Pt0 = A * d;  // eq (8)
+  if (Pt0(2) < 0)
+    ROS_WARN("Check this plsdafn");
+  // ROS_INFO_THROTTLE(1, "Z component of Pt0: %2.2f", Pt0(2));
+  
+  // Vector3d temp = Vec3TfToEigen(P1 - P0) / std::sqrt(tf::tfDot(P1 - P0, P1 - P0));
+  // ROS_INFO_THROTTLE(1, "a: {%2.2f, %2.2f, %2.2f}, P1 - P0 direction: {%2.2f, %2.2f, %2.2f}", a(0), a(1), a(2), temp(0), temp(1), temp(2));
+  // This verifies that these vectors are parallel 
+
+  double delta = a.dot(Vec3TfToEigen(P1 - P0)); // std::sqrt(tf::tfDot(P1 - P0, P1 - P0));
+  // ROS_INFO_THROTTLE(1, "delta from sim = %2.2f", delta);
+
+  Vector3d Pt1 = Pt0 + delta * a;
+  Vector3d b = Pt1 / sqrt(Pt1(0)*Pt1(0) + Pt1(1)*Pt1(1) + Pt1(2)*Pt1(2));
+  // ROS_INFO_THROTTLE(1, "b = {%2.2f, %2.2f, %2.2f}", b(0), b(1), b(2));
 
   cylinder_msgs::ImageFeatures f;
+  f.stamp = ros::Time::now();
   f.rho1 = rho1;
   f.theta1 = theta1;
   f.rho2 = rho2;
   f.theta2 = theta2;
-  static geometry_msgs::Point P1_msg;
-  tf::pointTFToMsg(P1, P1_msg);
-  f.P1 = P1_msg;
+  f.b.x = b(0); f.b.y = b(1); f.b.z = b(2);
   pub_image_features_.publish(f);
-
-
-
-  //
-
-  //ctheta1, stheta1, ctheta2, stheta2, rho1, rho2, cylinder_radius, b
-
-
-
-  	tf::Vector3 n1(ctheta1, stheta1, -1*rho1);
-  	tf::Vector3 n2(ctheta2, stheta2, -1*rho2);
-
-  	tf::Vector3 n1_normal(n1/sqrt(tf::tfDot(n1, n1)));
-
-  	tf::Vector3 n2_normal(n2/sqrt(tf::tfDot(n2, n2)));
-
-  	tf::Vector3 Delta(0.5 * (n1_normal + n2_normal));
-
-  	tf::Vector3 Delta_normal(Delta/sqrt(tf::tfDot(Delta, Delta)));
-
-  	tf::Vector3 s_P1_new(Delta/Delta_normal * Delta_normal);
-
-  	//ROS_INFO("s_P1_new:{%2.2f, %2.2f, %2.2f}", s_P1_new[0], s_P1_new[1], s_P1_new[2]);
-
-  	tf::Vector3 P0_new(cylinder_radius*s_P1_new);
-
-  	tf::Vector3 a_P1_new(tf::tfCross(n2, n1)/sqrt(pow(tf::tfCross(n1, n2)[0], 2) + pow(tf::tfCross(n1, n2)[1], 2) + pow(tf::tfCross(n1, n2)[2], 2)));
-
-  	//tf::Vector3 P1_new(P0_new + ((tf::tfDot(a_P1_new + P0_new, b))/(1-pow(tf::tfDot(a_P1_new, b), 2))*a_P1_new));
-
-  	//ROS_INFO("P0:{%2.2f, %2.2f, %2.2f}, P0_new:{%2.2f, %2.2f, %2.2f}", P0[0], P0[1], P0[2], P0_new[0], P0_new[1], P0_new[2]);
-
-  //
 }
 
 int main(int argc, char **argv)
@@ -190,10 +197,10 @@ int main(int argc, char **argv)
   ros::NodeHandle n;
 
   // Parameters
-  n.param("camera_simulator/radius", cylinder_radius, 0.1);
+  n.param("cylinder_radius", r, 0.1);
 
   // Publishers
-  pub_vision_status_ = n.advertise<std_msgs::Bool>("vision_status", 1);
+  // pub_vision_status_ = n.advertise<std_msgs::Bool>("vision_status", 1);
   pub_image_features_ = n.advertise<cylinder_msgs::ImageFeatures>("image_features", 1);
 
   // Subscribers
@@ -203,8 +210,31 @@ int main(int argc, char **argv)
   return 0;
 }
 
+Eigen::Matrix3d hat(Eigen::Vector3d vec)
+{
+  Eigen::Matrix3d M;
+  M << 0.0, -vec[2], vec[1], vec[2], 0.0, -vec[0], -vec[1], vec[0], 0.0;
+  return M;
+}
+
 void print_tfVector3(tf::Vector3 vec)
 {
 	ROS_INFO_THROTTLE(1/5, "Vec: {%2.2f, %2.2f, %2.2f}", vec[0], vec[1], vec[2]);
 	// cout << "Vec: {" << vec[0] << ", " << vec[1] << ", " << vec[2] << "}" << endl;
+}
+
+Vector3d Vec3TfToEigen(tf::Vector3 vec)
+{
+  Eigen::Vector3d vec2;
+  vec2 << vec[0], vec[1], vec[2];
+  return vec2;
+}
+
+void wrapAngle(double &angle)
+{
+  while (angle < -M_PI)
+  	angle += 2*M_PI;
+
+  while (angle > M_PI)
+  	angle -= 2*M_PI;
 }
