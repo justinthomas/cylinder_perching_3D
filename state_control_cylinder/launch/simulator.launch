@@ -1,7 +1,8 @@
 <launch>
 
   <arg name="model" default="quadrotor" />
- 
+  <arg name="cylinder_radius" default="0.1" /> 
+
   <group ns="$(arg model)">
     
     <node pkg="quadrotor_simulator"
@@ -10,7 +11,7 @@
       output="screen">
       <param name="rate/odom" value="100.0"/>
       <remap from="~odom" to="odom"/>
-      <remap from="~imu" to="quad_decode_msg/imu"/>
+      <remap from="~imu" to="imu"/>
       <remap from="~cmd" to="so3_cmd"/>
     </node>
     
@@ -72,7 +73,15 @@
       type="camera_simulator"
       name="camera_simulator"
       output="screen">
+      <param name="cylinder_radius" value="$(arg cylinder_radius)"/>
       <remap from="~imu" to="quad_decode_msg/imu"/>
+    </node>
+
+    <node pkg="process_image_features"
+      type="process_image_features"
+      name="process_image_features"
+      output="screen">
+      <param name="cylinder_radius" value="$(arg cylinder_radius)"/>
     </node>
 
   </group>

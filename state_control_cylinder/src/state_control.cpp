@@ -1,10 +1,14 @@
+// Regular Includes
+#include <Eigen/Dense>
+#include <math.h>
+#include <iostream>
+#include <stdio.h>
+
+// ROS Related Includes
 #include <ros/ros.h>
-#include <controllers_manager/Transition.h>
 #include <geometry_msgs/Vector3.h>
 #include <geometry_msgs/Vector3Stamped.h>
 #include <geometry_msgs/Quaternion.h>
-#include <quadrotor_msgs/FlatOutputs.h>
-#include <quadrotor_msgs/PositionCommand.h>
 #include <nav_msgs/Odometry.h>
 #include <sensor_msgs/Imu.h>
 #include <std_msgs/Bool.h>
@@ -12,13 +16,20 @@
 #include <std_msgs/Float64.h>
 #include <tf/transform_datatypes.h>
 #include <tf/LinearMath/Matrix3x3.h>
-#include <math.h>
-#include <iostream>
+#include <tf/transform_broadcaster.h>
+
+// Custom Includes
+#include <controllers_manager/Transition.h>
+#include <quadrotor_msgs/FlatOutputs.h>
+#include <quadrotor_msgs/PositionCommand.h>
 #include "nano_kontrol2.h"
 // #include <trajectory.h>
-#include <tf/transform_broadcaster.h>
 #include <cylinder_msgs/ImageFeatures.h>
+#include <cylinder_msgs/ParallelPlane.h>
+
 using namespace std;
+using namespace Eigen;
+using namespace tf;
 
 #define SAFETY_ON
 
@@ -27,7 +38,7 @@ enum controller_state
   INIT,
   TAKEOFF,
   HOVER,
-  LINE_TRACKER_JERK,
+  LINE_TRACKER_MIN_JERK,
   LINE_TRACKER_YAW,
   LINE_TRACKER_DISTANCE,
   VELOCITY_TRACKER,
@@ -43,9 +54,10 @@ enum controller_state
 double xoff, yoff, zoff, yaw_off, mass_;
 bool safety, cut_motors_after_traj;
 static geometry_msgs::Point home_;
+std::string gstr;
 
 // Stuff for trajectory
-/* 
+/*
 #include <string>
 traj_type traj;
 ros::Time traj_start_time;
@@ -73,18 +85,20 @@ static ros::Publisher pub_vision_status_;
 
 // Vision Stuff
 static tf::Transform T_Cam_to_Body_ = tf::Transform(tf::Matrix3x3(1,0,0, 0,-1,0, 0,0,-1), tf::Vector3(0,0,0));
-
+static void Jacobians(const Vector3d &P1_in_pp, const Vector3d &sdot, Matrix3d &J, Matrix3d &Jinv, Matrix3d &Jdot);
+// static void sim_pp_features(const double &r, const Eigen::Vector3d &P1_in_pp, const Eigen::Vector3d &P0, Eigen::Vector3d &s);
+double r;
 
 // Quadrotor Pose
 static geometry_msgs::Point pos_;
 static geometry_msgs::Vector3 vel_;
 static geometry_msgs::Quaternion ori_;
-static geometry_msgs::Quaternion imu_q_;
+static tf::Quaternion imu_q_;
 static bool have_odom_(false), imu_info_ (false), vision_info_(false);
 
 // Strings
 static const std::string line_tracker_distance("line_tracker/LineTrackerDistance");
-static const std::string line_tracker_jerk("line_tracker/LineTrackerJerk");
+static const std::string line_tracker_min_jerk("line_tracker/LineTrackerMinJerk");
 static const std::string line_tracker_yaw("line_tracker/LineTrackerYaw");
 static const std::string velocity_tracker_str("velocity_tracker/VelocityTrackerYaw");
 
@@ -94,6 +108,8 @@ void hover_at(const geometry_msgs::Point goal);
 void go_home();
 void go_to(const quadrotor_msgs::FlatOutputs goal);
 void print_tfVector3(tf::Vector3 vec);
+void fmtVec3d(std::string &str, const Eigen::Vector3d &v);
+void color(std::string &str);
 
 // Callbacks and functions
 static void nanokontrol_cb(const sensor_msgs::Joy::ConstPtr &msg)
@@ -189,17 +205,17 @@ static void nanokontrol_cb(const sensor_msgs::Joy::ConstPtr &msg)
       hover_in_place();
     }
     // Line Tracker
-    else if(selected && msg->buttons[line_tracker_button] && (state_ == HOVER || state_ == LINE_TRACKER_JERK || state_ == TAKEOFF))
+    else if(selected && msg->buttons[line_tracker_button] && (state_ == HOVER || state_ == LINE_TRACKER_MIN_JERK || state_ == TAKEOFF))
     {
-      state_ = LINE_TRACKER_JERK;
-      ROS_INFO("Engaging controller: LINE_TRACKER_JERK");
+      state_ = LINE_TRACKER_MIN_JERK;
+      ROS_INFO("Engaging controller: LINE_TRACKER_MIN_JERK");
       geometry_msgs::Point goal;
       goal.x = 2*msg->axes[0] + xoff;
       goal.y = 2*msg->axes[1] + yoff;
       goal.z = 2*msg->axes[2] + 2.0 + zoff;
       pub_goal_min_jerk_.publish(goal);
       controllers_manager::Transition transition_cmd;
-      transition_cmd.request.controller = line_tracker_jerk;
+      transition_cmd.request.controller = line_tracker_min_jerk;
       srv_transition_.call(transition_cmd);
     }
     // Line Tracker Yaw
@@ -373,14 +389,64 @@ void updateTrajGoal()
 
 static void imu_cb(const sensor_msgs::Imu::ConstPtr &msg)
 {
-  imu_q_ = msg->orientation;
   imu_info_ = true;
+  tf::quaternionMsgToTF(msg->orientation, imu_q_);
 }
 
-static void image_update_cb(const cylinder_msgs::ImageFeatures::ConstPtr &msg)
+static void image_update_cb(const cylinder_msgs::ParallelPlane::ConstPtr &msg)
 {
   vision_info_ = true;
+
+  // The rotation from the parallel plane to the world
+  Matrix3d R_pp_to_W(Quaterniond(msg->q.w, msg->q.x, msg->q.y, msg->q.z));
+  Vector3d P1(msg->P1.x, msg->P1.y, msg->P1.z);
+  Vector3d sdot(msg->sdot[0], msg->sdot[1], msg->sdot[2]);
+
+  Matrix3d J, Jdot, Jinv;
+  Jacobians(P1, sdot, J, Jinv, Jdot);
+
+  // Vector3d vel_world = R_pp_to_W * Jinv * sdot;
+  Vector3d vel_world = Jinv * sdot;
+  gstr = "World Vel Est";
+  fmtVec3d(gstr, vel_world);
+  ROS_INFO_THROTTLE(1, gstr.c_str());
 }
+
+void Jacobians(const Vector3d &P1_in_pp, const Vector3d &sdot, Matrix3d &J, Matrix3d &Jinv, Matrix3d &Jdot)
+{
+  double x1, y1, z1;
+  x1 = P1_in_pp(0);
+  y1 = P1_in_pp(1);
+  z1 = P1_in_pp(2);
+
+  J(0,0) = 0;
+  J(0,1) = (pow(y1,2) + pow(z1,2))/((-pow(r,2) + pow(y1,2))*z1 + pow(z1,3) - r*y1*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2)));
+  J(0,2) = -(((pow(y1,2) + pow(z1,2))*(r*z1 + y1*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2))))/(sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2))*pow(r*y1 - z1*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2)),2)));
+  J(1,0) = 0;
+  J(1,1) = -((pow(y1,2) + pow(z1,2))/((-pow(r,2) + pow(y1,2))*z1 + pow(z1,3) + r*y1*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2))));
+  J(1,2) = ((pow(y1,2) + pow(z1,2))*(-(r*z1) + y1*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2))))/(sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2))*pow(r*y1 + z1*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2)),2));
+  J(2,0) = -(1/z1);
+  J(2,1) = 0;
+  J(2,2) = x1/pow(z1,2);
+
+  Jinv = J.inverse();
+  Vector3d p1dot = Jinv * sdot;
+  double x1dot, y1dot, z1dot;
+  x1dot = p1dot(0);
+  y1dot = p1dot(1);
+  z1dot = p1dot(2);
+
+  Jdot(0,0) = 0;
+  Jdot(0,1) = (2*((-pow(r,2) + pow(y1,2))*z1 + pow(z1,3) - r*y1*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2)))*(y1*y1dot + z1*z1dot) - (pow(y1,2) + pow(z1,2))*(2*y1*z1*y1dot - r*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2))*y1dot + (-pow(r,2) + pow(y1,2))*z1dot + 3*pow(z1,2)*z1dot - (r*y1*(y1*y1dot + z1*z1dot))/sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2))))/pow((-pow(r,2) + pow(y1,2))*z1 + pow(z1,3) - r*y1*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2)),2);
+  Jdot(0,2) = (-(pow(y1,6)*z1*y1dot) + 2*pow(y1,7)*z1dot + pow(y1,5)*(r*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2))*y1dot - 3*(pow(r,2) - 2*pow(z1,2))*z1dot) + 3*pow(y1,4)*z1*((pow(r,2) - pow(z1,2))*y1dot + r*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2))*z1dot) + pow(z1,3)*((pow(r,4) - pow(z1,4))*y1dot + r*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2))*(pow(r,2) + 2*pow(z1,2))*z1dot) + pow(y1,2)*z1*(-3*(pow(r,4) - pow(r,2)*pow(z1,2) + pow(z1,4))*y1dot + r*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2))*(-3*pow(r,2) + 5*pow(z1,2))*z1dot) + y1*pow(z1,2)*(3*pow(r,3)*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2))*y1dot + (-3*pow(r,4) + 2*pow(z1,4))*z1dot) + pow(y1,3)*(r*(-pow(r,2) + pow(z1,2))*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2))*y1dot + (pow(r,4) - 3*pow(r,2)*pow(z1,2) + 6*pow(z1,4))*z1dot))/(pow(-pow(r,2) + pow(y1,2) + pow(z1,2),1.5)*pow(-(r*y1) + z1*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2)),3));
+  Jdot(1,0) = 0;
+  Jdot(1,1) = (-2*((-pow(r,2) + pow(y1,2))*z1 + pow(z1,3) + r*y1*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2)))*(y1*y1dot + z1*z1dot) + (pow(y1,2) + pow(z1,2))*(2*y1*z1*y1dot + r*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2))*y1dot + (-pow(r,2) + pow(y1,2))*z1dot + 3*pow(z1,2)*z1dot + (r*y1*(y1*y1dot + z1*z1dot))/sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2))))/pow((-pow(r,2) + pow(y1,2))*z1 + pow(z1,3) + r*y1*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2)),2);
+  Jdot(1,2) = (pow(y1,6)*z1*y1dot - 2*pow(y1,7)*z1dot + pow(y1,5)*(r*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2))*y1dot + 3*(pow(r,2) - 2*pow(z1,2))*z1dot) + 3*pow(y1,4)*z1*((-pow(r,2) + pow(z1,2))*y1dot + r*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2))*z1dot) + pow(z1,3)*((-pow(r,4) + pow(z1,4))*y1dot + r*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2))*(pow(r,2) + 2*pow(z1,2))*z1dot) + pow(y1,2)*z1*(3*(pow(r,4) - pow(r,2)*pow(z1,2) + pow(z1,4))*y1dot + r*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2))*(-3*pow(r,2) + 5*pow(z1,2))*z1dot) + y1*pow(z1,2)*(3*pow(r,3)*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2))*y1dot + (3*pow(r,4) - 2*pow(z1,4))*z1dot) - pow(y1,3)*(r*(pow(r,2) - pow(z1,2))*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2))*y1dot + (pow(r,4) - 3*pow(r,2)*pow(z1,2) + 6*pow(z1,4))*z1dot))/(pow(-pow(r,2) + pow(y1,2) + pow(z1,2),1.5)*pow(r*y1 + z1*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2)),3));
+  Jdot(2,0) = z1dot/pow(z1,2);
+  Jdot(2,1) = 0;
+  Jdot(2,2) = (z1*x1dot - 2*x1*z1dot)/pow(z1,3);
+}
+
 void hover_at(const geometry_msgs::Point goal)
 {
   state_ = HOVER;
@@ -531,6 +597,7 @@ int main(int argc, char **argv)
   n.param("state_control/offsets/y", yoff, 0.0);
   n.param("state_control/offsets/z", zoff, 0.0);
   n.param("state_control/offsets/yaw", yaw_off, 0.0);
+  n.param("cylinder_radius", r, 0.1);
   ROS_INFO("Quad using offsets: {xoff: %2.2f, yoff: %2.2f, zoff: %2.2f, yaw_off: %2.2f}", xoff, yoff, zoff, yaw_off);
 
   // n.param("state_control/traj_filename", traj_filename, string("traj.csv"));
@@ -552,10 +619,24 @@ int main(int argc, char **argv)
   ros::Subscriber sub_odom = n.subscribe("odom", 1, &odom_cb, ros::TransportHints().tcpNoDelay());
   ros::Subscriber sub_imu = n.subscribe("imu", 1, &imu_cb, ros::TransportHints().tcpNoDelay());
   ros::Subscriber sub_nanokontrol = n.subscribe("/nanokontrol2", 1, nanokontrol_cb, ros::TransportHints().tcpNoDelay());
-  ros::Subscriber sub_image_features = n.subscribe("image_features", 1, &image_update_cb, ros::TransportHints().tcpNoDelay());
+  ros::Subscriber sub_vision = n.subscribe("image_features_pp", 1, &image_update_cb, ros::TransportHints().tcpNoDelay());
 
   // Spin
   ros::spin();
 
   return 0;
+}
+
+void color(std::string &str)
+{
+  str.insert(0, "\e[0;33m");
+  str.append("\e[0m");
+}
+
+void fmtVec3d(std::string &str, const Eigen::Vector3d &v)
+{
+  std::stringstream ss;
+  ss << str << ": {" << v(0) << ", " << v(1) << ", " << v(2) << "}";
+  str = ss.str();
+  color(str);
 }
