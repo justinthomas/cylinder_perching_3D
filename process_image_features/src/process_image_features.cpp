@@ -23,7 +23,7 @@ static ros::Publisher pub_features_, pub_pp_;
 double r;
 static tf::Quaternion imu_q_;
 static KalmanFilter kf;
-static void pp_features(const double &r, const Eigen::Vector3d &P1_in_pp, const Eigen::Vector3d &P0, Eigen::Vector3d &s);
+static void pp_features(const double &r, const Eigen::Vector3d &P1_in_pp, const Eigen::Vector3d &P0, Eigen::Vector3d &s, Eigen::Vector2d &sdot_sign);
 
 // Functions
 static void image_features_cb(const cylinder_msgs::ImageFeatures::ConstPtr &msg)
@@ -147,7 +147,8 @@ static void cylinder_pose_cb(const cylinder_msgs::CylinderPose::ConstPtr &msg)
 
   // Image feature vector in the parallel plane
   Vector3d s;
-  pp_features(r, P0, P1_in_pp, s);
+  Vector2d sdot_sign;
+  pp_features(r, P0, P1_in_pp, s, sdot_sign);
 
   //////////////////////
   //  Kalman Filter //
@@ -174,9 +175,11 @@ static void cylinder_pose_cb(const cylinder_msgs::CylinderPose::ConstPtr &msg)
   pp_msg.s[0]  = state(0);
   pp_msg.s[1]  = state(1);
   pp_msg.s[2]  = state(2);
-  pp_msg.sdot[0] = state(3);
-  pp_msg.sdot[1] = state(4);
+  pp_msg.sdot[0] = state(3) * sdot_sign(0);
+  pp_msg.sdot[1] = state(4) * sdot_sign(1);
   pp_msg.sdot[2] = state(5);
+  // pp_msg.sdot_sign[0] = sdot_sign(0);
+  // pp_msg.sdot_sign[1] = sdot_sign(1);
 
   // Load the quaternion
   Eigen::Quaterniond q(R_pp_to_W);
@@ -189,7 +192,8 @@ static void cylinder_pose_cb(const cylinder_msgs::CylinderPose::ConstPtr &msg)
   pub_pp_.publish(pp_msg);
 }
 
-void pp_features(const double &r, const Eigen::Vector3d &P0, const Eigen::Vector3d &P1_in_pp, Eigen::Vector3d &s) // , const Eigen::Vector3d &a_in_Cam, const Eigen::Matrix3d &R_pp_to_Cam 
+void pp_features(const double &r, const Eigen::Vector3d &P0, const Eigen::Vector3d &P1_in_pp,
+    Eigen::Vector3d &s, Eigen::Vector2d &sdot_sign)
 {
     double A = sqrt(P0.dot(P0) - pow((r), 2));
 
@@ -235,15 +239,18 @@ void pp_features(const double &r, const Eigen::Vector3d &P0, const Eigen::Vector
     theta2 = atan2(stheta2, ctheta2);
 
     // Handle the case when theta1 or theta2 are less than zero (we want them to both be = M_PI / 2)
+    sdot_sign << 1, 1;
     if (theta1 < 0)
     {
     	rho1 = - rho1;
     	theta1 = theta1 + M_PI;
+      sdot_sign(0) = -1;
     }
     if (theta2 < 0)
     {
     	rho2 = - rho2;
     	theta2 = theta2 + M_PI;
+    	sdot_sign(1) = -1;
     }
 
     // Note, this is already in the correct convention
@@ -266,10 +273,10 @@ int main(int argc, char **argv)
   
   // Kalman Filter initalized this way for vicon_odom 
   double max_accel;
-  n.param("max_accel", max_accel, 5.0);
+  n.param("max_accel", max_accel, 2.0);
 
   double dt, camera_fps;
-  n.param("camera_fps", camera_fps, 50.0);
+  n.param("camera_fps", camera_fps, 100.0);
   ROS_INFO("Assuming Camera at %2.2f fps", camera_fps); 
   ROS_ASSERT(camera_fps > 0.0);
   dt = 1/camera_fps;
@@ -283,9 +290,9 @@ int main(int argc, char **argv)
   proc_noise_diag(5) = max_accel*dt;
   proc_noise_diag = proc_noise_diag.array().square();
   KalmanFilter::Measurement_t meas_noise_diag;
-  meas_noise_diag(0) = 1e-4;
-  meas_noise_diag(1) = 1e-4;
-  meas_noise_diag(2) = 1e-4;
+  meas_noise_diag(0) = 1e-2;
+  meas_noise_diag(1) = 1e-2;
+  meas_noise_diag(2) = 1e-2;
   meas_noise_diag = meas_noise_diag.array().square();
   kf.initialize(KalmanFilter::State_t::Zero(),
                 KalmanFilter::ProcessCov_t::Identity(),
