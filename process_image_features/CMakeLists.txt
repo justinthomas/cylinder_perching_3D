@@ -26,5 +26,9 @@ set(LIBRARY_OUTPUT_PATH ${PROJECT_SOURCE_DIR}/lib)
 #target_link_libraries(${PROJECT_NAME} another_library)
 #rosbuild_add_boost_directories()
 #rosbuild_link_boost(${PROJECT_NAME} thread)
-rosbuild_add_executable(process_image_features src/process_image_features.cpp)
+
+find_package(Eigen3 REQUIRED)
+include_directories(${EIGEN3_INCLUDE_DIR})
+
+rosbuild_add_executable(process_image_features src/process_image_features.cpp src/filter.cpp)
 #target_link_libraries(example ${PROJECT_NAME})
