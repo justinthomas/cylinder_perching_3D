@@ -1,0 +1,16 @@
+<launch>
+
+  <arg name="model" default="quadrotor" />
+  <arg name="cylinder_radius" default="0.1" />
+
+  <group ns="$(arg model)">
+
+    <node pkg="process_image_features"
+      type="process_image_features"
+      name="process_image_features"
+      output="screen">
+      <param name="cylinder_radius" value="$(arg cylinder_radius)"/>
+    </node>
+
+  </group>
+</launch>

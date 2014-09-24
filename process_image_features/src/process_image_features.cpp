@@ -23,7 +23,12 @@ static ros::Publisher pub_features_, pub_pp_;
 double r;
 static tf::Quaternion imu_q_;
 static KalmanFilter kf;
-static void pp_features(const double &r, const Eigen::Vector3d &P1_in_pp, const Eigen::Vector3d &P0, Eigen::Vector3d &s, Eigen::Vector2d &sdot_sign);
+static void pp_features(const double &r, const Eigen::Vector3d &P1_inV, const Eigen::Vector3d &P0, Eigen::Vector3d &s, Eigen::Vector2d &sdot_sign);
+static Eigen::Matrix3d tfRtoEigen(tf::Matrix3x3 tfR);
+
+// Static transformations
+static const tf::Matrix3x3 R_CtoB_ = tf::Matrix3x3(1,0,0, 0,-1,0, 0,0,-1);
+static const tf::Transform T_CtoB_ = tf::Transform(R_CtoB_, tf::Vector3(0,0,0));
 
 // Functions
 static void image_features_cb(const cylinder_msgs::ImageFeatures::ConstPtr &msg)
@@ -43,11 +48,10 @@ static void image_features_cb(const cylinder_msgs::ImageFeatures::ConstPtr &msg)
 
   // Delta
   tf::Vector3 Delta(0.5 * (n1 / sqrt(tf::tfDot(n1, n1)) + n2 / sqrt(tf::tfDot(n2, n2))));
-  // We know that the cylinder is below us
+  // We know that the cylinder is in front of the camera
   if (Delta[2] < 0)
   {
     Delta = -1 * Delta;
-    // n1 = -1 * n1;
   }
 
   // s and P0
@@ -55,7 +59,7 @@ static void image_features_cb(const cylinder_msgs::ImageFeatures::ConstPtr &msg)
   tf::Vector3 P0 = r * s;
 
   // ROS_INFO_THROTTLE(1, "P0 Estimate: {%2.2f, %2.2f, %2.2f}", P0[0], P0[1], P0[2]);
-  
+
   // tf::Vector3 temp = P0 / sqrt(tf::tfDot(P0, P0));
   // ROS_INFO_THROTTLE(1, "P0 Direction {%2.2f, %2.2f, %2.2f}", temp[0], temp[1], temp[2]);
 
@@ -106,35 +110,42 @@ static void cylinder_pose_cb(const cylinder_msgs::CylinderPose::ConstPtr &msg)
   // }
 
   // Determine the Rotation from world to Camera
-  static tf::Vector3 g_in_Cam, a_in_Cam, z_in_Cam, y_in_Cam, x_in_Cam;
+  static tf::Vector3 g_in_C, a_in_C, z_in_C, y_in_C, x_in_C;
 
-  tf::Matrix3x3 R(imu_q_);
-  g_in_Cam = R.transpose() * tf::Vector3(0, 0, -9.81);
-  z_in_Cam = - g_in_Cam / sqrt(tfDot(g_in_Cam, g_in_Cam)); // Correct
-  // ROS_INFO("z_in_Cam: {%2.2f, %2.2f, %2.2f}", z_in_Cam[0], z_in_Cam[1], z_in_Cam[2]);
+  // Ignore yaw from IMU
+  double yaw, pitch, roll;
+  tf::Matrix3x3 R_IMU(imu_q_);
+  R_IMU.getEulerYPR(yaw, pitch, roll);
+  R_IMU.setEulerYPR(0, pitch, roll);
 
-  tf::vector3MsgToTF(msg->a, a_in_Cam);
-  tf::Vector3 z_x_a = tf::tfCross(z_in_Cam, a_in_Cam);
-  y_in_Cam = z_x_a / sqrt(tfDot(z_x_a, z_x_a));
+  z_in_C = R_CtoB_.transpose() * R_IMU.transpose() * tf::Vector3(0, 0, 1);
+  // ROS_INFO_THROTTLE(1, "\e[96mz_in_C: {%2.2f, %2.2f, %2.2f}\e[0m", z_in_C[0], z_in_C[1], z_in_C[2]);
 
-  x_in_Cam = tf::tfCross(y_in_Cam, z_in_Cam);
+  tf::vector3MsgToTF(msg->a, a_in_C);
+  // ROS_INFO_THROTTLE(1, "\e[96ma_in_C: {%2.2f, %2.2f, %2.2f}\e[0m", a_in_C[0], a_in_C[1], a_in_C[2]);
+  tf::Vector3 z_x_a = tf::tfCross(z_in_C, a_in_C);
+  y_in_C = z_x_a / sqrt(tfDot(z_x_a, z_x_a));
 
-  Eigen::Matrix3d R_W_to_Cam;
-  R_W_to_Cam <<
-      x_in_Cam[0], y_in_Cam[0], z_in_Cam[0],
-      x_in_Cam[1], y_in_Cam[1], z_in_Cam[1],
-      x_in_Cam[2], y_in_Cam[2], z_in_Cam[2];
+  x_in_C = tf::tfCross(y_in_C, z_in_C);
 
-  // Determine the Rotation from parallel plane to Camera
-  tf::Vector3 z_pp_in_C = tfCross(a_in_Cam, y_in_Cam);
-  Eigen::Matrix3d R_pp_to_Cam;
-  R_pp_to_Cam <<
-      a_in_Cam[0], y_in_Cam[0], z_pp_in_C[0],
-      a_in_Cam[1], y_in_Cam[1], z_pp_in_C[1],
-      a_in_Cam[2], y_in_Cam[2], z_pp_in_C[2];
+  Eigen::Matrix3d R_WtoC;
+  R_WtoC <<
+      x_in_C[0], y_in_C[0], z_in_C[0],
+      x_in_C[1], y_in_C[1], z_in_C[1],
+      x_in_C[2], y_in_C[2], z_in_C[2];
+  // cout << "R_WtoC" << endl << R_WtoC << endl;
 
-  // The rotation from the parallel plane to the world
-  Matrix3d R_pp_to_W = R_W_to_Cam.transpose() * R_pp_to_Cam;
+  // Determine the Rotation from the virtual camera to the real camera frame
+  tf::Vector3 z_pp_in_C = tfCross(a_in_C, -y_in_C);
+  Eigen::Matrix3d R_VtoC;
+  R_VtoC <<
+      a_in_C[0], -y_in_C[0], z_pp_in_C[0],
+      a_in_C[1], -y_in_C[1], z_pp_in_C[1],
+      a_in_C[2], -y_in_C[2], z_pp_in_C[2];
+  // cout << "R_VtoC" << endl << R_VtoC << endl;
+
+  // The rotation from the virtual frame to the world
+  Matrix3d R_VtoW = R_WtoC.transpose() * R_VtoC;
 
   Vector3d P0;
   P0 << msg->P0.x, msg->P0.y, msg->P0.z;
@@ -142,36 +153,36 @@ static void cylinder_pose_cb(const cylinder_msgs::CylinderPose::ConstPtr &msg)
   Vector3d P1;
   P1 << msg->P1.x, msg->P1.y, msg->P1.z;
 
-  Vector3d P1_in_pp = R_pp_to_Cam.transpose() * P1;
-  // ROS_INFO_THROTTLE(1, "P1_in_pp: {%2.2f, %2.2f, %2.2f}", P1_in_pp(0), P1_in_pp(1), P1_in_pp(2));
+  Vector3d P1_inV = R_VtoC.transpose() * P1;
+  // ROS_INFO_THROTTLE(1, "P1_inV: {%2.2f, %2.2f, %2.2f}", P1_inV(0), P1_inV(1), P1_inV(2));
 
-  // Image feature vector in the parallel plane
+  // Image feature vector in the virtual frame
   Vector3d s;
   Vector2d sdot_sign;
-  pp_features(r, P0, P1_in_pp, s, sdot_sign);
+  pp_features(r, P0, P1_inV, s, sdot_sign);
 
   //////////////////////
   //  Kalman Filter //
   //////////////////
-  
+
   cylinder_msgs::ParallelPlane pp_msg;
-  
+
   // Kalman filter for getting velocity from position measurements
   static ros::Time t_last = msg->stamp;
-  
+
   double dt = (msg->stamp - t_last).toSec();
   t_last = msg->stamp;
-  
+
   kf.processUpdate(dt);
-  
+
   const KalmanFilter::Measurement_t meas(s(0), s(1), s(2));
   kf.measurementUpdate(meas, dt);
 
   const KalmanFilter::State_t state = kf.getState();
   pp_msg.stamp = msg->stamp;
-  pp_msg.P1.x = P1_in_pp(0);
-  pp_msg.P1.y = P1_in_pp(1);
-  pp_msg.P1.z = P1_in_pp(2);
+  pp_msg.P1.x = P1_inV(0);
+  pp_msg.P1.y = P1_inV(1);
+  pp_msg.P1.z = P1_inV(2);
   pp_msg.s[0]  = state(0);
   pp_msg.s[1]  = state(1);
   pp_msg.s[2]  = state(2);
@@ -181,32 +192,44 @@ static void cylinder_pose_cb(const cylinder_msgs::CylinderPose::ConstPtr &msg)
   // pp_msg.sdot_sign[0] = sdot_sign(0);
   // pp_msg.sdot_sign[1] = sdot_sign(1);
 
-  // Load the quaternion
-  Eigen::Quaterniond q(R_pp_to_W);
-  pp_msg.q.x = q.x();
-  pp_msg.q.y = q.y();
-  pp_msg.q.z = q.z();
-  pp_msg.q.w = q.w();
+  // Load the quaternions
+  Eigen::Quaterniond qVtoW(R_VtoW);
+  pp_msg.qVtoW.x = qVtoW.x();
+  pp_msg.qVtoW.y = qVtoW.y();
+  pp_msg.qVtoW.z = qVtoW.z();
+  pp_msg.qVtoW.w = qVtoW.w();
+
+  Eigen::Quaterniond qCtoW(R_WtoC.transpose());
+  pp_msg.qCtoW.x = qCtoW.x();
+  pp_msg.qCtoW.y = qCtoW.y();
+  pp_msg.qCtoW.z = qCtoW.z();
+  pp_msg.qCtoW.w = qCtoW.w();
+
+  Eigen::Quaterniond qBtoW(R_WtoC.transpose() * tfRtoEigen(R_CtoB_).transpose());
+  pp_msg.qBtoW.x = qBtoW.x();
+  pp_msg.qBtoW.y = qBtoW.y();
+  pp_msg.qBtoW.z = qBtoW.z();
+  pp_msg.qBtoW.w = qBtoW.w();
 
   // Publish the message
   pub_pp_.publish(pp_msg);
 }
 
-void pp_features(const double &r, const Eigen::Vector3d &P0, const Eigen::Vector3d &P1_in_pp,
+void pp_features(const double &r, const Eigen::Vector3d &P0, const Eigen::Vector3d &P1_inV,
     Eigen::Vector3d &s, Eigen::Vector2d &sdot_sign)
 {
     double A = sqrt(P0.dot(P0) - pow((r), 2));
 
-    // Eigen::Vector3d a_pp = R_pp_to_Cam.transpose() * Eigen::Vector3d(a_in_Cam[0], a_in_Cam[1], a_in_Cam[2]);
-    // Eigen::Vector3d P0_pp = R_pp_to_Cam.transpose() * P0;
+    // Eigen::Vector3d a_pp = R_VtoC.transpose() * Eigen::Vector3d(a_in_C[0], a_in_C[1], a_in_C[2]);
+    // Eigen::Vector3d P0_pp = R_VtoC.transpose() * P0;
 
-    double x0 = 0; 
-    double y0 = -P1_in_pp(1);
-    double z0 = P1_in_pp(2);
+    double x0 = 0;
+    double y0 = -P1_inV(1);
+    double z0 = P1_inV(2);
 
     double a = -1;
-    double b = 0; 
-    double c = 0; 
+    double b = 0;
+    double c = 0;
 
     double alpha = y0*c - z0*b;
     double beta =  z0*a - x0*c;
@@ -242,23 +265,31 @@ void pp_features(const double &r, const Eigen::Vector3d &P0, const Eigen::Vector
     sdot_sign << 1, 1;
     if (theta1 < 0)
     {
+    	// This doesn't seem to happen
     	rho1 = - rho1;
     	theta1 = theta1 + M_PI;
+      // ROS_INFO_THROTTLE(1, "rho1 sign change");
       sdot_sign(0) = -1;
     }
     if (theta2 < 0)
     {
+      // This seems to always happen
     	rho2 = - rho2;
     	theta2 = theta2 + M_PI;
+    	// ROS_INFO_THROTTLE(1, "rho2 sign change");
     	sdot_sign(1) = -1;
+    }
+    else
+    {
+      cout << "\e[94m" << "AHHH" << "\e[0m" << endl;
     }
 
     // Note, this is already in the correct convention
-    double u = P1_in_pp(0) / P1_in_pp(2); 
+    double u = P1_inV(0) / P1_inV(2);
 
     // Return the feature vector
     s << rho1, rho2, u;
-    // ROS_INFO_THROTTLE(1, "\e[0;33mEstimates: {rho1: %2.2f, rho2: %2.2f}\e[0m", rho1, rho2);
+    // ROS_INFO_THROTTLE(1, "\e[0;33mEstimates: {rho1: %2.2f, rho2: %2.2f, u: %2.2f}\e[0m", rho1, rho2, u);
     // ROS_INFO_THROTTLE(1, "\e[0;33mParallel Plane: {theta1: %2.2f, theta2: %2.2f}\e[0m", theta1, theta2);
 }
 
@@ -270,14 +301,14 @@ int main(int argc, char **argv)
   // Parameters
   n.param("cylinder_radius", r, 0.1);
 
-  
-  // Kalman Filter initalized this way for vicon_odom 
+
+  // Kalman Filter initalized this way for vicon_odom
   double max_accel;
   n.param("max_accel", max_accel, 2.0);
 
   double dt, camera_fps;
   n.param("camera_fps", camera_fps, 100.0);
-  ROS_INFO("Assuming Camera at %2.2f fps", camera_fps); 
+  ROS_INFO("Assuming Camera at %2.2f fps", camera_fps);
   ROS_ASSERT(camera_fps > 0.0);
   dt = 1/camera_fps;
 
@@ -299,7 +330,7 @@ int main(int argc, char **argv)
                 proc_noise_diag.asDiagonal(),
                 meas_noise_diag.asDiagonal());
   //
-  
+
   // Publishers
   pub_features_ = n.advertise<cylinder_msgs::CylinderPose>("cylinder_pose", 1);
   pub_pp_ = n.advertise<cylinder_msgs::ParallelPlane>("image_features_pp", 1);
@@ -311,6 +342,13 @@ int main(int argc, char **argv)
 
   ros::spin();
   return 0;
+}
+
+static Eigen::Matrix3d tfRtoEigen(tf::Matrix3x3 tfR)
+{
+  Eigen::Matrix3d EigenR;
+  EigenR << tfR[0][0], tfR[0][1], tfR[0][2], tfR[1][0], tfR[1][1], tfR[1][2], tfR[2][0], tfR[2][1], tfR[2][2];
+  return EigenR;
 }
 
 //void print_tfVector3(tf::Vector3 vec)
