@@ -70,7 +70,7 @@ static void odom_cb(const nav_msgs::Odometry::ConstPtr &msg)
 
   // Correct
   tf::Transform T_WorldToCamera(R_WorldToCamera, R_WorldToCamera * (-1 * r_Cam_W));
-  // print_tfVector3(T_WorldToCamera * tf::Vector3(0,0,0));
+  // print_tfVector3(T_WorldToCamera * tf::Vector3(1, 0, 0);
 
   // Note: P1 is expressed in the camera frame, not the robot frame
   tf::Vector3 P1(T_WorldToCamera * r_Cyl_World);
@@ -167,7 +167,7 @@ static void odom_cb(const nav_msgs::Odometry::ConstPtr &msg)
   Vector3d d = (A * hat(a) - r * Matrix3d::Identity()).inverse() * hat(a) * Vec3TfToEigen(P0);
   Vector3d Pt0 = A * d;  // eq (8)
   if (Pt0(2) < 0)
-    ROS_WARN("Check this plsdafn");
+    ROS_WARN("Cylinder is behind camera!");
   // ROS_INFO_THROTTLE(1, "Z component of Pt0: %2.2f", Pt0(2));
   
   // Vector3d temp = Vec3TfToEigen(P1 - P0) / std::sqrt(tf::tfDot(P1 - P0, P1 - P0));
@@ -219,7 +219,7 @@ Eigen::Matrix3d hat(Eigen::Vector3d vec)
 
 void print_tfVector3(tf::Vector3 vec)
 {
-	ROS_INFO_THROTTLE(1/5, "Vec: {%2.2f, %2.2f, %2.2f}", vec[0], vec[1], vec[2]);
+	ROS_INFO_THROTTLE(1/5, "\e[36m" "Vec: {%2.2f, %2.2f, %2.2f}" "\e[0m", vec[0], vec[1], vec[2]);
 	// cout << "Vec: {" << vec[0] << ", " << vec[1] << ", " << vec[2] << "}" << endl;
 }
 
