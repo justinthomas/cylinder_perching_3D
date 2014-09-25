@@ -23,7 +23,7 @@ static ros::Publisher pub_features_, pub_pp_;
 double r;
 static tf::Quaternion imu_q_;
 static KalmanFilter kf;
-static void pp_features(const double &r, const Eigen::Vector3d &P1_inV, const Eigen::Vector3d &P0, Eigen::Vector3d &s, Eigen::Vector2d &sdot_sign);
+static void pp_features(const double &r, const Eigen::Vector3d &P1_inV, const Eigen::Vector3d &P0, Eigen::Vector3d &s, Eigen::Vector3d &s_sign);
 static Eigen::Matrix3d tfRtoEigen(tf::Matrix3x3 tfR);
 
 // Static transformations
@@ -158,8 +158,8 @@ static void cylinder_pose_cb(const cylinder_msgs::CylinderPose::ConstPtr &msg)
 
   // Image feature vector in the virtual frame
   Vector3d s;
-  Vector2d sdot_sign;
-  pp_features(r, P0, P1_inV, s, sdot_sign);
+  Vector3d s_sign;
+  pp_features(r, P0, P1_inV, s, s_sign);
 
   //////////////////////
   //  Kalman Filter //
@@ -175,7 +175,8 @@ static void cylinder_pose_cb(const cylinder_msgs::CylinderPose::ConstPtr &msg)
 
   kf.processUpdate(dt);
 
-  const KalmanFilter::Measurement_t meas(s(0), s(1), s(2));
+  // Switch the measurement vector to our convention for filtering to avoid jumps
+  const KalmanFilter::Measurement_t meas(s(0)*s_sign(0), s(1)*s_sign(1), s(2)*s_sign(2));
   kf.measurementUpdate(meas, dt);
 
   const KalmanFilter::State_t state = kf.getState();
@@ -183,14 +184,13 @@ static void cylinder_pose_cb(const cylinder_msgs::CylinderPose::ConstPtr &msg)
   pp_msg.P1.x = P1_inV(0);
   pp_msg.P1.y = P1_inV(1);
   pp_msg.P1.z = P1_inV(2);
-  pp_msg.s[0]  = state(0);
-  pp_msg.s[1]  = state(1);
-  pp_msg.s[2]  = state(2);
-  pp_msg.sdot[0] = state(3) * sdot_sign(0);
-  pp_msg.sdot[1] = state(4) * sdot_sign(1);
-  pp_msg.sdot[2] = state(5);
-  // pp_msg.sdot_sign[0] = sdot_sign(0);
-  // pp_msg.sdot_sign[1] = sdot_sign(1);
+  // Switch the state vector back to their convention
+  pp_msg.s[0]  = state(0) * s_sign(0);
+  pp_msg.s[1]  = state(1) * s_sign(1);
+  pp_msg.s[2]  = state(2) * s_sign(2);
+  pp_msg.sdot[0] = state(3) * s_sign(0);
+  pp_msg.sdot[1] = state(4) * s_sign(1);
+  pp_msg.sdot[2] = state(5) * s_sign(2);;
 
   // Load the quaternions
   Eigen::Quaterniond qVtoW(R_VtoW);
@@ -216,7 +216,7 @@ static void cylinder_pose_cb(const cylinder_msgs::CylinderPose::ConstPtr &msg)
 }
 
 void pp_features(const double &r, const Eigen::Vector3d &P0, const Eigen::Vector3d &P1_inV,
-    Eigen::Vector3d &s, Eigen::Vector2d &sdot_sign)
+    Eigen::Vector3d &s, Eigen::Vector3d &s_sign)
 {
     double A = sqrt(P0.dot(P0) - pow((r), 2));
 
@@ -262,30 +262,31 @@ void pp_features(const double &r, const Eigen::Vector3d &P0, const Eigen::Vector
     theta2 = atan2(stheta2, ctheta2);
 
     // Handle the case when theta1 or theta2 are less than zero (we want them to both be = M_PI / 2)
-    sdot_sign << 1, 1;
-    if (theta1 < 0)
+    s_sign << 1, 1, 1;
+    if (theta1 <= 0)
     {
     	// This doesn't seem to happen
-    	rho1 = - rho1;
-    	theta1 = theta1 + M_PI;
+    	// rho1 = - rho1;
+    	// theta1 = theta1 + M_PI;
       // ROS_INFO_THROTTLE(1, "rho1 sign change");
-      sdot_sign(0) = -1;
+      s_sign(0) = -1;
     }
-    if (theta2 < 0)
+    if (theta2 <= 0)
     {
       // This seems to always happen
-    	rho2 = - rho2;
-    	theta2 = theta2 + M_PI;
+    	// rho2 = - rho2;
+    	// theta2 = theta2 + M_PI;
     	// ROS_INFO_THROTTLE(1, "rho2 sign change");
-    	sdot_sign(1) = -1;
+    	s_sign(1) = -1;
     }
     else
     {
       cout << "\e[94m" << "AHHH" << "\e[0m" << endl;
     }
 
-    // Note, this is already in the correct convention
-    double u = P1_inV(0) / P1_inV(2);
+    // By default, we are putting this in the x-left, y-up frame
+    double u = -P1_inV(0) / P1_inV(2);
+    s_sign(2) = - 1;
 
     // Return the feature vector
     s << rho1, rho2, u;
@@ -321,9 +322,9 @@ int main(int argc, char **argv)
   proc_noise_diag(5) = max_accel*dt;
   proc_noise_diag = proc_noise_diag.array().square();
   KalmanFilter::Measurement_t meas_noise_diag;
-  meas_noise_diag(0) = 1e-2;
-  meas_noise_diag(1) = 1e-2;
-  meas_noise_diag(2) = 1e-2;
+  meas_noise_diag(0) = 1e-6;
+  meas_noise_diag(1) = 1e-6;
+  meas_noise_diag(2) = 1e-6;
   meas_noise_diag = meas_noise_diag.array().square();
   kf.initialize(KalmanFilter::State_t::Zero(),
                 KalmanFilter::ProcessCov_t::Identity(),
