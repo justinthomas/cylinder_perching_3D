@@ -1,0 +1,9 @@
+function setpose()
+{
+  rostopic pub -1 /quadrotor/odom nav_msgs/Odometry "{pose: {pose: {position: {x: $1, y: $2, z: $3}, orientation: {x: 0.0, y: 0.0, z: 0.0, w: 1.0}}}}"
+}
+
+function setimu()
+{
+  rostopic pub -1 /quadrotor/imu sensor_msgs/Imu "{orientation: {x: 0.0, y: 0.0, z: 0.0, w: 1.0}}"
+}
