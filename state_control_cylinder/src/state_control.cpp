@@ -61,7 +61,7 @@ enum controller_state
 
 // Variables and parameters
 double xoff, yoff, zoff, yaw_off, mass_;
-bool safety, cut_motors_after_traj;
+bool safety(true), safety_catch_active(false), cut_motors_after_traj;
 static geometry_msgs::Point home_;
 std::string gstr;
 
@@ -746,8 +746,9 @@ static void odom_cb(const nav_msgs::Odometry::ConstPtr &msg)
 
 #ifdef SAFETY_ON
   // Position and attitude Safety Catch
-  if (safety && (abs(pos_.x) > 2.2 || abs(pos_.y) > 1.8|| pos_.z > 3.5 || pos_.z < 0.2))
+  if (safety && (abs(pos_.x) > 2.2 || abs(pos_.y) > 1.9 || pos_.z > 4.0 || pos_.z < 0.2) && ~safety_catch_active)
   {
+    safety_catch_active = true;
     ROS_WARN("Robot has exited safe box. Safety Catch initiated...");
     hover_in_place();
   }
