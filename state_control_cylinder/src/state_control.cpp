@@ -521,7 +521,7 @@ static void image_update_cb(const cylinder_msgs::ParallelPlane::ConstPtr &msg)
   Eigen::Vector3d angular_velocity = Eigen::Vector3d(omega_hat(2,1), omega_hat(0,2), omega_hat(1,0));
 
   // Only publish if we are in the vision control state
-  if (state_ == VISION_CONTROL)
+  if (true) // (state_ == VISION_CONTROL)
   {
     quadrotor_msgs::SO3Command::Ptr cmd(new quadrotor_msgs::SO3Command);
     cmd->header.stamp = msg->stamp;
@@ -746,7 +746,7 @@ static void odom_cb(const nav_msgs::Odometry::ConstPtr &msg)
 
 #ifdef SAFETY_ON
   // Position and attitude Safety Catch
-  if (safety && (abs(pos_.x) > 2.2 || abs(pos_.y) > 1.9 || pos_.z > 4.0 || pos_.z < 0.2) && ~safety_catch_active)
+  if (safety && (abs(pos_.x) > 2.2 || abs(pos_.y) > 1.9 || pos_.z > 4.0 || pos_.z < 0.2) && !safety_catch_active)
   {
     safety_catch_active = true;
     ROS_WARN("Robot has exited safe box. Safety Catch initiated...");
@@ -795,21 +795,21 @@ int main(int argc, char **argv)
   // Publishers //
   ///////////////
   srv_transition_= n.serviceClient<controllers_manager::Transition>("controllers_manager/transition");
-  pub_goal_min_jerk_ = n.advertise<geometry_msgs::Vector3>("controllers_manager/line_tracker_min_jerk/goal", 1);
-  pub_goal_distance_ = n.advertise<geometry_msgs::Vector3>("controllers_manager/line_tracker_distance/goal", 1);
-  pub_goal_velocity_ = n.advertise<quadrotor_msgs::FlatOutputs>("controllers_manager/velocity_tracker/vel_cmd_with_yaw", 1);
-  pub_goal_yaw_ = n.advertise<quadrotor_msgs::FlatOutputs>("controllers_manager/line_tracker_yaw/goal", 1);
+  pub_goal_min_jerk_ = n.advertise<geometry_msgs::Vector3>("controllers_manager/line_tracker_min_jerk/goal", 10);
+  pub_goal_distance_ = n.advertise<geometry_msgs::Vector3>("controllers_manager/line_tracker_distance/goal", 10);
+  pub_goal_velocity_ = n.advertise<quadrotor_msgs::FlatOutputs>("controllers_manager/velocity_tracker/vel_cmd_with_yaw", 10);
+  pub_goal_yaw_ = n.advertise<quadrotor_msgs::FlatOutputs>("controllers_manager/line_tracker_yaw/goal", 10);
   // pub_goal_trajectory_ = n.advertise<quadrotor_msgs::PositionCommand>("controllers_manager/trajectory_tracker/goal", 1);
   // pub_info_bool_ = n.advertise<std_msgs::Bool>("traj_signal", 1);
-  pub_motors_ = n.advertise<std_msgs::Bool>("motors", 1);
-  pub_estop_ = n.advertise<std_msgs::Empty>("estop", 1);
+  pub_motors_ = n.advertise<std_msgs::Bool>("motors", 10);
+  pub_estop_ = n.advertise<std_msgs::Empty>("estop", 10);
   so3_command_pub_ = n.advertise<quadrotor_msgs::SO3Command>("so3_cmd", 10);
 
   // Subscribers
-  ros::Subscriber sub_odom = n.subscribe("odom", 1, &odom_cb, ros::TransportHints().tcpNoDelay());
-  ros::Subscriber sub_imu = n.subscribe("imu", 1, &imu_cb, ros::TransportHints().tcpNoDelay());
-  ros::Subscriber sub_nanokontrol = n.subscribe("/nanokontrol2", 1, nanokontrol_cb, ros::TransportHints().tcpNoDelay());
-  ros::Subscriber sub_vision = n.subscribe("image_features_pp", 1, &image_update_cb, ros::TransportHints().tcpNoDelay());
+  ros::Subscriber sub_odom = n.subscribe("odom", 10, &odom_cb, ros::TransportHints().tcpNoDelay());
+  ros::Subscriber sub_imu = n.subscribe("quad_decode_msg/imu", 10, &imu_cb, ros::TransportHints().tcpNoDelay());
+  ros::Subscriber sub_nanokontrol = n.subscribe("/nanokontrol2", 10, nanokontrol_cb, ros::TransportHints().tcpNoDelay());
+  ros::Subscriber sub_vision = n.subscribe("image_features_pp", 10, &image_update_cb, ros::TransportHints().tcpNoDelay());
 
   // Spin
   ros::spin();
