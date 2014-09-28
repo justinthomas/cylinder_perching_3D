@@ -1,7 +1,7 @@
 <launch>
 
   <arg name="model" default="quadrotor" />
-  <arg name="cylinder_radius" default="0.1" />
+  <arg name="cylinder_radius" default="0.04" />
 
   <group ns="$(arg model)">
 
@@ -10,6 +10,8 @@
       name="process_image_features"
       output="screen">
       <param name="cylinder_radius" value="$(arg cylinder_radius)"/>
+      <param name="camera_fps" value="30"/>
+      <remap from="~imu" to="imu"/>
     </node>
 
   </group>
