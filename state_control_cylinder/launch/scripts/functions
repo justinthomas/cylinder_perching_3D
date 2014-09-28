@@ -5,7 +5,7 @@ function setpose()
 
 function setimu()
 {
-  rostopic pub -1 /quadrotor/imu sensor_msgs/Imu "{orientation: {x: 0.0, y: 0.0, z: 0.0, w: 1.0}}"
+  rostopic pub -1 /quadrotor/quad_decode_msg/imu sensor_msgs/Imu "{orientation: {x: 0.0, y: 0.0, z: 0.0, w: 1.0}}"
 }
 
 function motorson()
