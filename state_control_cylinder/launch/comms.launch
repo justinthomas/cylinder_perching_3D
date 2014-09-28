@@ -1,6 +1,6 @@
 <launch>
 
-  <arg name="model" default="QuadrotorPapa"/>
+  <arg name="model" default="QuadrotorAlpha"/>
 
   <group ns="$(arg model)">
 	  

@@ -23,8 +23,10 @@ gains:
 #  rot: {x: 1.3, y: 1.3, z: 0.3}
 #  ang: {x: 0.25, y: 0.25, z: 0.03}
 #  ki:  {x: 0.0, y: 0.0, z: 0.0}
+# Increasing the kf makes the robot hover higher
+# kf_default: 0.00000006 
 corrections:
-  kf: -0.000000003 
+  kf: 0.000000005 
   r: 0.0
   p: 0.0
 
