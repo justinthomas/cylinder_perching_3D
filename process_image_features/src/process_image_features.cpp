@@ -298,7 +298,7 @@ void pp_features(const double &r, const Eigen::Vector3d &P0, const Eigen::Vector
 int main(int argc, char **argv)
 {
   ros::init(argc, argv, "process_image_features");
-  ros::NodeHandle n("~");
+  ros::NodeHandle n;
 
   // Parameters
   n.param("cylinder_radius", r, 0.1);
@@ -339,7 +339,7 @@ int main(int argc, char **argv)
 
   // Subscribers
   ros::Subscriber image_features_sub = n.subscribe("/cylinder_detection/cylinder_features", 10, &image_features_cb, ros::TransportHints().tcpNoDelay());
-  ros::Subscriber sub_imu = n.subscribe("imu", 10, &imu_cb, ros::TransportHints().tcpNoDelay());
+  ros::Subscriber sub_imu = n.subscribe("quad_decode_msg/imu", 10, &imu_cb, ros::TransportHints().tcpNoDelay());
   ros::Subscriber cylinder_pose = n.subscribe("cylinder_pose", 10, &cylinder_pose_cb, ros::TransportHints().tcpNoDelay());
 
   ros::spin();

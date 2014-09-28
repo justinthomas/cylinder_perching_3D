@@ -11,7 +11,7 @@
       output="screen">
       <param name="rate/odom" value="100.0"/>
       <remap from="~odom" to="odom"/>
-      <remap from="~imu" to="imu"/>
+      <remap from="~imu" to="/$(arg model)/quad_decode_msg/imu"/>
       <remap from="~cmd" to="so3_cmd"/>
     </node>
     
@@ -75,7 +75,6 @@
       name="camera_simulator"
       output="screen">
       <param name="cylinder_radius" value="$(arg cylinder_radius)"/>
-      <remap from="~imu" to="quad_decode_msg/imu"/>
     </node>
 
     <node pkg="process_image_features"

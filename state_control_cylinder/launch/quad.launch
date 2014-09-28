@@ -84,7 +84,6 @@
       output="screen">
       <param name="cylinder_radius" value="$(arg cylinder_radius)"/>
       <param name="camera_fps" value="30"/>
-      <remap from="~imu" to="imu"/>
     </node>
 
   </group>
