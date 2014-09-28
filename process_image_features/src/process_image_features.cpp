@@ -22,12 +22,13 @@ using namespace Eigen;
 static ros::Publisher pub_features_, pub_pp_;
 double r;
 static tf::Quaternion imu_q_;
+static bool imu_info_(false);
 static KalmanFilter kf;
 static void pp_features(const double &r, const Eigen::Vector3d &P1_inV, const Eigen::Vector3d &P0, Eigen::Vector3d &s, Eigen::Vector3d &s_sign);
 static Eigen::Matrix3d tfRtoEigen(tf::Matrix3x3 tfR);
 
 // Static transformations
-static const tf::Matrix3x3 R_CtoB_ = tf::Matrix3x3(1,0,0, 0,-1,0, 0,0,-1);
+static const tf::Matrix3x3 R_CtoB_ = tf::Matrix3x3(sqrt(2)/2,sqrt(2)/2,0, sqrt(2)/2,-sqrt(2)/2,0, 0,0,-1);
 static const tf::Transform T_CtoB_ = tf::Transform(R_CtoB_, tf::Vector3(0,0,0));
 
 // Functions
@@ -90,7 +91,7 @@ static void image_features_cb(const cylinder_msgs::ImageFeatures::ConstPtr &msg)
 
 static void imu_cb(const sensor_msgs::Imu::ConstPtr &msg)
 {
-  // imu_info_ = true;
+  imu_info_ = true;
   tf::quaternionMsgToTF(msg->orientation, imu_q_);
 }
 
@@ -102,12 +103,11 @@ static void cylinder_pose_cb(const cylinder_msgs::CylinderPose::ConstPtr &msg)
   // imu_q_.setEuler(0.0, M_PI/5, 0.0);
   // imu_info_ = true;
 
-  // if (!imu_info_)
-  // {
-  //   ROS_WARN("No IMU info");
-  //   hover_in_place();
-  //   return;
-  // }
+  if (!imu_info_)
+  {
+    // ROS_WARN("No IMU info");
+    return;
+  }
 
   // Determine the Rotation from world to Camera
   static tf::Vector3 g_in_C, a_in_C, z_in_C, y_in_C, x_in_C;
@@ -279,7 +279,8 @@ void pp_features(const double &r, const Eigen::Vector3d &P0, const Eigen::Vector
     	// ROS_INFO_THROTTLE(1, "rho2 sign change");
     	s_sign(1) = -1;
     }
-    else
+    
+    if (theta1 > 0 && theta2 > 0)
     {
       cout << "\e[94m" << "AHHH" << "\e[0m" << endl;
     }
@@ -297,7 +298,7 @@ void pp_features(const double &r, const Eigen::Vector3d &P0, const Eigen::Vector
 int main(int argc, char **argv)
 {
   ros::init(argc, argv, "process_image_features");
-  ros::NodeHandle n;
+  ros::NodeHandle n("~");
 
   // Parameters
   n.param("cylinder_radius", r, 0.1);
@@ -308,7 +309,7 @@ int main(int argc, char **argv)
   n.param("max_accel", max_accel, 2.0);
 
   double dt, camera_fps;
-  n.param("camera_fps", camera_fps, 100.0);
+  n.param("camera_fps", camera_fps, 50.0);
   ROS_INFO("Assuming Camera at %2.2f fps", camera_fps);
   ROS_ASSERT(camera_fps > 0.0);
   dt = 1/camera_fps;
@@ -322,9 +323,9 @@ int main(int argc, char **argv)
   proc_noise_diag(5) = max_accel*dt;
   proc_noise_diag = proc_noise_diag.array().square();
   KalmanFilter::Measurement_t meas_noise_diag;
-  meas_noise_diag(0) = 1e-6;
-  meas_noise_diag(1) = 1e-6;
-  meas_noise_diag(2) = 1e-6;
+  meas_noise_diag(0) = 1e-1;
+  meas_noise_diag(1) = 1e-1;
+  meas_noise_diag(2) = 1e-1;
   meas_noise_diag = meas_noise_diag.array().square();
   kf.initialize(KalmanFilter::State_t::Zero(),
                 KalmanFilter::ProcessCov_t::Identity(),
@@ -337,7 +338,7 @@ int main(int argc, char **argv)
   pub_pp_ = n.advertise<cylinder_msgs::ParallelPlane>("image_features_pp", 1);
 
   // Subscribers
-  ros::Subscriber image_features_sub = n.subscribe("image_features", 10, &image_features_cb, ros::TransportHints().tcpNoDelay());
+  ros::Subscriber image_features_sub = n.subscribe("/cylinder_detection/cylinder_features", 10, &image_features_cb, ros::TransportHints().tcpNoDelay());
   ros::Subscriber sub_imu = n.subscribe("imu", 10, &imu_cb, ros::TransportHints().tcpNoDelay());
   ros::Subscriber cylinder_pose = n.subscribe("cylinder_pose", 10, &cylinder_pose_cb, ros::TransportHints().tcpNoDelay());
 
