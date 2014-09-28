@@ -10,10 +10,10 @@ function setimu()
 
 function motorson()
 {
-  rostopic pub -1 /QuadrotorQuebec/so3_cmd quadrotor_msgs/SO3Command "{force: {x: 0.0, y: 0.0, z: 1.0}, aux: {enable_motors: True}}"
+  rostopic pub -1 /QuadrotorAlpha/so3_cmd quadrotor_msgs/SO3Command "{force: {x: 0.0, y: 0.0, z: 1.0}, aux: {enable_motors: True}}"
 }
 
 function motorsoff()
 {
-  rostopic pub -1 /QuadrotorQuebec/so3_cmd quadrotor_msgs/SO3Command "{force: {x: 0.0, y: 0.0, z: 1.0}, aux: {enable_motors: False}}"
+  rostopic pub -1 /QuadrotorAlpha/so3_cmd quadrotor_msgs/SO3Command "{force: {x: 0.0, y: 0.0, z: 1.0}, aux: {enable_motors: False}}"
 }
