@@ -8,6 +8,7 @@
 #include <tf/transform_datatypes.h>
 #include <tf/LinearMath/Matrix3x3.h>
 #include <sensor_msgs/Imu.h>
+#include <TooN/TooN.h>
 
 // Custom Includes
 #include <cylinder_msgs/ImageFeatures.h>
@@ -18,6 +19,15 @@
 using namespace std;
 using namespace tf;
 using namespace Eigen;
+
+#define TEXT_RED "\e[91m"
+#define TEXT_GREEN "\e[92m"
+#define TEXT_YELLOW "\e[93m"
+#define TEXT_BLUE "\e[94m"
+#define TEXT_MAGENTA "\e[95m"
+#define TEXT_CYAN "\e[96m"
+#define TEXT_RESET "\e[0m"
+#define NUM_INF 999999.9
 
 static ros::Publisher pub_features_, pub_pp_;
 double r;
@@ -30,6 +40,14 @@ static Eigen::Matrix3d tfRtoEigen(tf::Matrix3x3 tfR);
 // Static transformations
 static const tf::Matrix3x3 R_CtoB_ = tf::Matrix3x3(sqrt(2)/2,sqrt(2)/2,0, sqrt(2)/2,-sqrt(2)/2,0, 0,0,-1);
 static const tf::Transform T_CtoB_ = tf::Transform(R_CtoB_, tf::Vector3(0,0,0));
+
+//IMU buffer
+//The delay need to be compensated
+std::list<TooN::Vector<3> > acc_buff;
+std::list<TooN::Vector<3> > omega_buff;
+std::list<TooN::Vector<4> > orientation_buff;
+std::list<ros::Time> time_stamp_buff;
+int imu_semaphore = 0;
 
 // Functions
 static void image_features_cb(const cylinder_msgs::ImageFeatures::ConstPtr &msg)
@@ -45,24 +63,49 @@ static void image_features_cb(const cylinder_msgs::ImageFeatures::ConstPtr &msg)
   tf::Vector3 n1(ctheta1, stheta1, -1*rho1);
   tf::Vector3 n2(ctheta2, stheta2, -1*rho2);
 
+  // We need to make sure that the normal vectors are pointing outwards.
+  // The largest rho magnitude should be positive
+  if (fabs(n1[2]) >= fabs(n2[2]))
+  {
+    // The sign of rho1 should be positive (so that the vector points away from the other line in the image)
+    if (-n1[2] < 0)
+      n1 = -1.0 * n1;
+
+    // The dot product should be negative 
+    if (tf::tfDot(n1, n2) > 0)
+      n2 = -1.0 * n2;
+  }
+  else 
+  {
+    if (-n2[2] < 0)
+      n2 = -1.0 * n2;
+
+    if (tf::tfDot(n1, n2) > 0)
+      n1 = -1.0 * n1;
+  }
+
   // ROS_INFO_THROTTLE(1, "n1: {%2.2f, %2.2f, %2.2f}, n2: {%2.2f, %2.2f, %2.2f}", n1[0], n1[1], n1[2], n2[0], n2[1], n2[2]);
 
   // Delta
   tf::Vector3 Delta(0.5 * (n1 / sqrt(tf::tfDot(n1, n1)) + n2 / sqrt(tf::tfDot(n2, n2))));
+  
   // We know that the cylinder is in front of the camera
   if (Delta[2] < 0)
   {
     Delta = -1 * Delta;
+    // ROS_WARN("Sign of Delta switched");
   }
+  // ROS_INFO_THROTTLE(1, "Delta: {%2.4f, %2.4f, %2.4f}", Delta[0], Delta[1], Delta[2]);
 
   // s and P0
   tf::Vector3 s = Delta / tfDot(Delta, Delta);
   tf::Vector3 P0 = r * s;
+  // ROS_INFO_THROTTLE(10, "Using r = %2.2f", r);
 
-  // ROS_INFO_THROTTLE(1, "P0 Estimate: {%2.2f, %2.2f, %2.2f}", P0[0], P0[1], P0[2]);
+  // ROS_INFO_THROTTLE(1, "\e[33mP0 Estimate: {%2.2f, %2.2f, %2.2f}\e[0m", P0[0], P0[1], P0[2]);
 
   // tf::Vector3 temp = P0 / sqrt(tf::tfDot(P0, P0));
-  // ROS_INFO_THROTTLE(1, "P0 Direction {%2.2f, %2.2f, %2.2f}", temp[0], temp[1], temp[2]);
+  // ROS_INFO_THROTTLE(1, "\e[34mP0 Direction {%2.2f, %2.2f, %2.2f}\e[0m", temp[0], temp[1], temp[2]);
 
   // a, axis of cylinder in camera frame
   tf::Vector3 n2Crossn1 = tf::tfCross(n2, n1);
@@ -70,6 +113,24 @@ static void image_features_cb(const cylinder_msgs::ImageFeatures::ConstPtr &msg)
   // The axis of the cylinder in the camera frame
   tf::Vector3 a = n2Crossn1 / std::sqrt(tf::tfDot(n2Crossn1, n2Crossn1)); // tfVector3Norm(n2Crossn1);
   // ROS_INFO_THROTTLE(1, "\e[0;36ma_est = {%2.2f, %2.2f, %2.2f}\e[0m", a[0], a[1], a[2]);
+  
+  // Make sure that the x component of a is always positive 
+  if (a[1] < 0)
+  {
+    // ROS_INFO(TEXT_MAGENTA "Axis switched" TEXT_RESET);
+    a = -1.0 * a;
+  }
+
+  // Check for the direction of a switching
+  /*
+  static tf::Vector3 a_last = a;
+  if (tf::tfDot(a, a_last) < 0)
+  {
+    ROS_INFO(TEXT_MAGENTA "Axis switched" TEXT_RESET);
+    a = -1.0 * a;
+  }
+  a_last = a;
+  */
 
   tf::Vector3 b(msg->b.x, msg->b.y, msg->b.z);
   double delta = tfDot(a, b) * tfDot(P0, b) / (1 - pow(tfDot(a, b), 2));
@@ -91,8 +152,34 @@ static void image_features_cb(const cylinder_msgs::ImageFeatures::ConstPtr &msg)
 
 static void imu_cb(const sensor_msgs::Imu::ConstPtr &msg)
 {
+	// while(imu_semaphore==1) usleep(10);
+	imu_semaphore = 1;
+
+	TooN::Vector<4> q;
+	q[0] = msg->orientation.w;
+	q[1] = msg->orientation.x;
+	q[2] = msg->orientation.y;
+	q[3] = msg->orientation.z;
+
+        TooN::Vector<3> angular_velocity;
+	angular_velocity[0] = msg->angular_velocity.x;
+	angular_velocity[1] = msg->angular_velocity.y;
+	angular_velocity[2] = msg->angular_velocity.z;
+
+	TooN::Vector<3> acc;
+	acc[0] = msg->linear_acceleration.x;
+	acc[1] = msg->linear_acceleration.y;
+	acc[2] = msg->linear_acceleration.z;
+
+	//buffer IMU to compensate visual delay
+        acc_buff.push_front(acc);
+	omega_buff.push_front(angular_velocity);
+	orientation_buff.push_front(q);
+	time_stamp_buff.push_front(msg->header.stamp);
+
+	imu_semaphore = 0;
+  //tf::quaternionMsgToTF(msg->orientation, imu_q_);
   imu_info_ = true;
-  tf::quaternionMsgToTF(msg->orientation, imu_q_);
 }
 
 static void cylinder_pose_cb(const cylinder_msgs::CylinderPose::ConstPtr &msg)
@@ -105,14 +192,56 @@ static void cylinder_pose_cb(const cylinder_msgs::CylinderPose::ConstPtr &msg)
 
   if (!imu_info_)
   {
-    // ROS_WARN("No IMU info");
+    ROS_WARN("No IMU info");
     return;
   }
 
   // Determine the Rotation from world to Camera
   static tf::Vector3 g_in_C, a_in_C, z_in_C, y_in_C, x_in_C;
+   
+  //Find the measurement
+ //Data should be alligned
+  // while(imu_semaphore==1) usleep(10);
+   imu_semaphore = 1;
+// Find aligned measurement, Time
+  double mdt = NUM_INF;
+  std::list<TooN::Vector<3> >::iterator    k1 = acc_buff.begin();
+  std::list<TooN::Vector<3> >::iterator    k2 = omega_buff.begin();
+  std::list<TooN::Vector<4> >::iterator    k3 = orientation_buff.begin();
+  std::list<ros::Time>::iterator           k4 = time_stamp_buff.begin();
+  imu_semaphore = 0;
 
-  // Ignore yaw from IMU
+  //Save alligned IMU measurements
+  TooN::Vector<3>   ca;
+  TooN::Vector<3>   co;
+  TooN::Vector<4>   cq;
+  ros::Time kt;
+  for (; k1 != acc_buff.end(); k1++, k2++, k3++, k4++)
+  {
+    double dt = fabs((*k4 - msg->stamp).toSec());
+    if (dt < mdt)
+    {
+      mdt = dt;
+      ca  = *k1;
+      co  = *k2;
+      cq  = *k3;
+      kt  = *k4;
+    }
+    else
+    {
+      break;
+    }
+  }
+  imu_q_ = tf::Quaternion(cq[1], cq[2], cq[3], cq[0]);
+
+  // Delete redundant measurements
+  acc_buff.erase(k1, acc_buff.end());
+  omega_buff.erase(k2, omega_buff.end());
+  orientation_buff.erase(k3, orientation_buff.end());
+  time_stamp_buff.erase(k4, time_stamp_buff.end());
+
+  
+  // Ignore raw from IMU
   double yaw, pitch, roll;
   tf::Matrix3x3 R_IMU(imu_q_);
   R_IMU.getEulerYPR(yaw, pitch, roll);
@@ -191,6 +320,10 @@ static void cylinder_pose_cb(const cylinder_msgs::CylinderPose::ConstPtr &msg)
   pp_msg.sdot[0] = state(3) * s_sign(0);
   pp_msg.sdot[1] = state(4) * s_sign(1);
   pp_msg.sdot[2] = state(5) * s_sign(2);;
+
+  pp_msg.s_sign[0] = s_sign(0);
+  pp_msg.s_sign[1] = s_sign(1);
+  pp_msg.s_sign[2] = s_sign(2);
 
   // Load the quaternions
   Eigen::Quaterniond qVtoW(R_VtoW);
@@ -280,10 +413,12 @@ void pp_features(const double &r, const Eigen::Vector3d &P0, const Eigen::Vector
     	s_sign(1) = -1;
     }
     
+    /*
     if (theta1 > 0 && theta2 > 0)
     {
-      cout << "\e[94m" << "AHHH" << "\e[0m" << endl;
+      ROS_INFO_THROTTLE(1, TEXT_BLUE "AHHH" TEXT_RESET);
     }
+    */
 
     // By default, we are putting this in the x-left, y-up frame
     double u = -P1_inV(0) / P1_inV(2);
@@ -303,10 +438,10 @@ int main(int argc, char **argv)
   // Parameters
   n.param("cylinder_radius", r, 0.1);
 
-
   // Kalman Filter initalized this way for vicon_odom
   double max_accel;
-  n.param("max_accel", max_accel, 2.0);
+  n.param("max_accel", max_accel, 4.0);
+  ROS_INFO("max_accel = %2.2f", max_accel);
 
   double dt, camera_fps;
   n.param("camera_fps", camera_fps, 50.0);
@@ -314,6 +449,9 @@ int main(int argc, char **argv)
   ROS_ASSERT(camera_fps > 0.0);
   dt = 1/camera_fps;
 
+  double mnoise1, mnoise2;
+  n.param("measurement_noise_rhos", mnoise1, 0.01);
+  n.param("measurement_noise_u", mnoise2, 0.1);
   KalmanFilter::State_t proc_noise_diag;
   proc_noise_diag(0) = 0.5*max_accel*dt*dt;
   proc_noise_diag(1) = 0.5*max_accel*dt*dt;
@@ -323,9 +461,9 @@ int main(int argc, char **argv)
   proc_noise_diag(5) = max_accel*dt;
   proc_noise_diag = proc_noise_diag.array().square();
   KalmanFilter::Measurement_t meas_noise_diag;
-  meas_noise_diag(0) = 1e-1;
-  meas_noise_diag(1) = 1e-1;
-  meas_noise_diag(2) = 1e-1;
+  meas_noise_diag(0) = mnoise1;
+  meas_noise_diag(1) = mnoise1;
+  meas_noise_diag(2) = mnoise2;
   meas_noise_diag = meas_noise_diag.array().square();
   kf.initialize(KalmanFilter::State_t::Zero(),
                 KalmanFilter::ProcessCov_t::Identity(),
