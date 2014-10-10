@@ -290,11 +290,14 @@ static void cylinder_pose_cb(const cylinder_msgs::CylinderPose::ConstPtr &msg)
   Vector3d s_sign;
   pp_features(r, P0, P1_inV, s, s_sign);
 
+  cylinder_msgs::ParallelPlane pp_msg;
+  pp_msg.s_meas[0] = s(0);
+  pp_msg.s_meas[1] = s(1);
+  pp_msg.s_meas[2] = s(2);
+
   //////////////////////
   //  Kalman Filter //
   //////////////////
-
-  cylinder_msgs::ParallelPlane pp_msg;
 
   // Kalman filter for getting velocity from position measurements
   static ros::Time t_last = msg->stamp;

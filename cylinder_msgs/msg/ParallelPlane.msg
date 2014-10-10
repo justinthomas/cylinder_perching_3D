@@ -1,5 +1,6 @@
 time stamp
 geometry_msgs/Point P1
+float64[3] s_meas
 float64[3] s
 float64[3] sdot
 float64[3] s_sign
