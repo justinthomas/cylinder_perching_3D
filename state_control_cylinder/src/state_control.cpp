@@ -482,7 +482,7 @@ static void image_update_cb(const cylinder_msgs::ParallelPlane::ConstPtr &msg)
 
   // Nominal thrust (in the world)
   Vector3d force = mass_ * g * e3 + mass_ * (
-      kx.asDiagonal() * R_VtoW * Jinv * e_pos + kv.asDiagonal() * R_VtoW * Jinv * e_vel + sddotdes);
+      kx.asDiagonal() * R_VtoW * Jinv * e_pos + kv.asDiagonal() * R_VtoW * Jinv * e_vel + Jinv * sddotdes);
   // ROS_INFO_THROTTLE(1, TEXT_GREEN "force: {%2.2f, %2.2f, %2.2f}" TEXT_RESET, force(0), force(1), force(2));
   
   // Vector3d force1 = mass_ * kx.asDiagonal() * T * e_pos;
@@ -558,60 +558,48 @@ void Jacobians(const Vector3d &P1_inV, const Vector3d &sdot, Matrix3d &J, Matrix
   // These values are correct in the virtual frame
   // ROS_INFO_THROTTLE(1, "\e[94mUsing {x1, y1, z1, r} = {%2.2f, %2.2f, %2.2f, %2.2f} in V\e[0m", P1_inV(0), P1_inV(1), P1_inV(2), r);
 
-  // Matrix to change convention
-  Eigen::Matrix3d Rcc;
-  Rcc << -1,0,0, 0,-1,0, 0,0,1;
-
   double x1, y1, z1;
-  Eigen::Vector3d P1_cc = Rcc * P1_inV;
-  x1 = P1_cc(0);
-  y1 = P1_cc(1);
-  z1 = P1_cc(2);
+  x1 = P1_inV(0);
+  y1 = P1_inV(1);
+  z1 = P1_inV(2);
 
-  // These values are correct in the virtual frame
   // ROS_INFO_THROTTLE(1, "\e[93mUsing {x1, y1, z1, r} = {%2.2f, %2.2f, %2.2f, %2.2f} to compute J\e[0m", x1, y1, z1, r);
 
-  // Unmodified Jacobian (already assumed that axis = {-1, 0, 0})
   J(0,0) = 0;
-  J(0,1) = -((pow(y1,2) + pow(z1,2))/((-pow(r,2) + pow(y1,2))*z1 + pow(z1,3) + r*y1*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2))));
-  J(0,2) = ((pow(y1,2) + pow(z1,2))*(-(r*z1) + y1*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2))))/(sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2))*pow(r*y1 + z1*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2)),2));
+  J(0,1) = (pow(y1,2) + pow(z1,2))/(pow(r,2)*z1 - z1*(pow(y1,2) + pow(z1,2)) + r*y1*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2)));
+  J(0,2) = ((pow(y1,2) + pow(z1,2))*(r*z1 + y1*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2))))/(sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2))*pow(r*y1 - z1*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2)),2));
   J(1,0) = 0;
-  J(1,1) = (pow(y1,2) + pow(z1,2))/((-pow(r,2) + pow(y1,2))*z1 + pow(z1,3) - r*y1*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2)));
-  J(1,2) = -(((pow(y1,2) + pow(z1,2))*(r*z1 + y1*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2))))/(sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2))*pow(r*y1 - z1*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2)),2)));
+  J(1,1) = (pow(y1,2) + pow(z1,2))/((-pow(r,2) + pow(y1,2))*z1 + pow(z1,3) + r*y1*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2)));
+  J(1,2) = ((pow(y1,2) + pow(z1,2))*(r*z1 - y1*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2))))/(sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2))*pow(r*y1 + z1*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2)),2));
   J(2,0) = 1/z1;
   J(2,1) = 0;
   J(2,2) = -(x1/pow(z1,2));
-  
+ 
   // cout << TEXT_CYAN << "J = " << endl << J << TEXT_RESET << endl;
 
-  // Make sure we switch back to the correct convention
   // Note: The minus sign gives us the velocity of the robot relative to P1
   // instead of the velocity of P1 relative to the robot
-  Jinv = - Rcc.inverse() * J.inverse();
+  Jinv = - J.inverse();
 
-  // Estimate the world velocity (minus to counter the above switch)
+  // Estimate the world velocity of p1 (minus to counter the above switch)
   Vector3d p1dot = - Jinv * sdot;
-
-  // Change back into the old convention
-  p1dot = Rcc * p1dot;
   double x1dot, y1dot, z1dot;
   x1dot = p1dot(0);
   y1dot = p1dot(1);
   z1dot = p1dot(2);
   
-  // Unmodified (already assumed that axis = {-1, 0, 0})
   Jdot(0,0) = 0;
-  Jdot(0,1) = (-2*((-pow(r,2) + pow(y1,2))*z1 + pow(z1,3) + r*y1*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2)))*(y1*y1dot + z1*z1dot) + (pow(y1,2) + pow(z1,2))*(2*y1*z1*y1dot + r*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2))*y1dot + (-pow(r,2) + pow(y1,2))*z1dot + 3*pow(z1,2)*z1dot + (r*y1*(y1*y1dot + z1*z1dot))/sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2))))/pow((-pow(r,2) + pow(y1,2))*z1 + pow(z1,3) + r*y1*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2)),2);
-  Jdot(0,2) = (pow(y1,6)*z1*y1dot - 2*pow(y1,7)*z1dot + pow(y1,5)*(r*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2))*y1dot + 3*(pow(r,2) - 2*pow(z1,2))*z1dot) + 3*pow(y1,4)*z1*((-pow(r,2) + pow(z1,2))*y1dot + r*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2))*z1dot) + pow(z1,3)*((-pow(r,4) + pow(z1,4))*y1dot + r*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2))*(pow(r,2) + 2*pow(z1,2))*z1dot) + pow(y1,2)*z1*(3*(pow(r,4) - pow(r,2)*pow(z1,2) + pow(z1,4))*y1dot + r*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2))*(-3*pow(r,2) + 5*pow(z1,2))*z1dot) + y1*pow(z1,2)*(3*pow(r,3)*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2))*y1dot + (3*pow(r,4) - 2*pow(z1,4))*z1dot) - pow(y1,3)*(r*(pow(r,2) - pow(z1,2))*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2))*y1dot + (pow(r,4) - 3*pow(r,2)*pow(z1,2) + 6*pow(z1,4))*z1dot))/(pow(-pow(r,2) + pow(y1,2) + pow(z1,2),1.5)*pow(r*y1 + z1*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2)),3));
+  Jdot(0,1) = (2*(pow(r,2)*z1 - z1*(pow(y1,2) + pow(z1,2)) + r*y1*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2)))*(y1*y1dot + z1*z1dot) - (pow(y1,2) + pow(z1,2))*(r*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2))*y1dot + pow(r,2)*z1dot - (pow(y1,2) + pow(z1,2))*z1dot - 2*z1*(y1*y1dot + z1*z1dot) + (r*y1*(y1*y1dot + z1*z1dot))/sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2))))/pow(pow(r,2)*z1 - z1*(pow(y1,2) + pow(z1,2)) + r*y1*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2)),2);
+  Jdot(0,2) = -((-(pow(y1,6)*z1*y1dot) + 2*pow(y1,7)*z1dot + pow(y1,5)*(r*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2))*y1dot - 3*(pow(r,2) - 2*pow(z1,2))*z1dot) + 3*pow(y1,4)*z1*((pow(r,2) - pow(z1,2))*y1dot + r*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2))*z1dot) + pow(z1,3)*((pow(r,4) - pow(z1,4))*y1dot + r*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2))*(pow(r,2) + 2*pow(z1,2))*z1dot) + pow(y1,2)*z1*(-3*(pow(r,4) - pow(r,2)*pow(z1,2) + pow(z1,4))*y1dot + r*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2))*(-3*pow(r,2) + 5*pow(z1,2))*z1dot) + y1*pow(z1,2)*(3*pow(r,3)*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2))*y1dot + (-3*pow(r,4) + 2*pow(z1,4))*z1dot) + pow(y1,3)*(r*(-pow(r,2) + pow(z1,2))*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2))*y1dot + (pow(r,4) - 3*pow(r,2)*pow(z1,2) + 6*pow(z1,4))*z1dot))/(pow(-pow(r,2) + pow(y1,2) + pow(z1,2),1.5)*pow(-(r*y1) + z1*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2)),3)));
   Jdot(1,0) = 0;
-  Jdot(1,1) = (2*((-pow(r,2) + pow(y1,2))*z1 + pow(z1,3) - r*y1*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2)))*(y1*y1dot + z1*z1dot) - (pow(y1,2) + pow(z1,2))*(2*y1*z1*y1dot - r*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2))*y1dot + (-pow(r,2) + pow(y1,2))*z1dot + 3*pow(z1,2)*z1dot - (r*y1*(y1*y1dot + z1*z1dot))/sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2))))/pow((-pow(r,2) + pow(y1,2))*z1 + pow(z1,3) - r*y1*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2)),2);
-  Jdot(1,2) = (-(pow(y1,6)*z1*y1dot) + 2*pow(y1,7)*z1dot + pow(y1,5)*(r*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2))*y1dot - 3*(pow(r,2) - 2*pow(z1,2))*z1dot) + 3*pow(y1,4)*z1*((pow(r,2) - pow(z1,2))*y1dot + r*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2))*z1dot) + pow(z1,3)*((pow(r,4) - pow(z1,4))*y1dot + r*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2))*(pow(r,2) + 2*pow(z1,2))*z1dot) + pow(y1,2)*z1*(-3*(pow(r,4) - pow(r,2)*pow(z1,2) + pow(z1,4))*y1dot + r*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2))*(-3*pow(r,2) + 5*pow(z1,2))*z1dot) + y1*pow(z1,2)*(3*pow(r,3)*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2))*y1dot + (-3*pow(r,4) + 2*pow(z1,4))*z1dot) + pow(y1,3)*(r*(-pow(r,2) + pow(z1,2))*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2))*y1dot + (pow(r,4) - 3*pow(r,2)*pow(z1,2) + 6*pow(z1,4))*z1dot))/(pow(-pow(r,2) + pow(y1,2) + pow(z1,2),1.5)*pow(-(r*y1) + z1*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2)),3));
+  Jdot(1,1) = (2*((-pow(r,2) + pow(y1,2))*z1 + pow(z1,3) + r*y1*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2)))*(y1*y1dot + z1*z1dot) - (pow(y1,2) + pow(z1,2))*(2*y1*z1*y1dot + r*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2))*y1dot + (-pow(r,2) + pow(y1,2))*z1dot + 3*pow(z1,2)*z1dot + (r*y1*(y1*y1dot + z1*z1dot))/sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2))))/pow((-pow(r,2) + pow(y1,2))*z1 + pow(z1,3) + r*y1*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2)),2);
+  Jdot(1,2) = -((pow(y1,6)*z1*y1dot - 2*pow(y1,7)*z1dot + pow(y1,5)*(r*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2))*y1dot + 3*(pow(r,2) - 2*pow(z1,2))*z1dot) + 3*pow(y1,4)*z1*((-pow(r,2) + pow(z1,2))*y1dot + r*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2))*z1dot) + pow(z1,3)*((-pow(r,4) + pow(z1,4))*y1dot + r*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2))*(pow(r,2) + 2*pow(z1,2))*z1dot) + pow(y1,2)*z1*(3*(pow(r,4) - pow(r,2)*pow(z1,2) + pow(z1,4))*y1dot + r*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2))*(-3*pow(r,2) + 5*pow(z1,2))*z1dot) + y1*pow(z1,2)*(3*pow(r,3)*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2))*y1dot + (3*pow(r,4) - 2*pow(z1,4))*z1dot) - pow(y1,3)*(r*(pow(r,2) - pow(z1,2))*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2))*y1dot + (pow(r,4) - 3*pow(r,2)*pow(z1,2) + 6*pow(z1,4))*z1dot))/(pow(-pow(r,2) + pow(y1,2) + pow(z1,2),1.5)*pow(r*y1 + z1*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2)),3)));
   Jdot(2,0) = -(z1dot/pow(z1,2));
   Jdot(2,1) = 0;
   Jdot(2,2) = (-(z1*x1dot) + 2*x1*z1dot)/pow(z1,3);
 
-  // Fix the convention
-  Jdot = Jdot * Rcc;
+  // robot relative to P1 instead of P1 relative to robot
+  Jdot = - Jdot;
 }
 
 void hover_at(const geometry_msgs::Point goal)
