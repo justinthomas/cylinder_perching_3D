@@ -1,17 +1,16 @@
 <launch>
 
   <arg name="model" default="quadrotor" />
-  <arg name="cylinder_radius" default="0.04" />
 
   <group ns="$(arg model)">
+    
+    <arg name="cylinder_radius" default="0.1" />
+    <param name="camera_fps" value="30"/>
 
     <node pkg="process_image_features"
       type="process_image_features"
       name="process_image_features"
       output="screen">
-      <param name="cylinder_radius" value="$(arg cylinder_radius)"/>
-      <param name="camera_fps" value="30"/>
-      <remap from="~imu" to="quad_decode_msg/imu"/>
     </node>
 
   </group>

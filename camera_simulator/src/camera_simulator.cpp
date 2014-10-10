@@ -23,6 +23,7 @@ static ros::Publisher pub_image_features_;
 
 // Vision Stuff
 static const tf::Matrix3x3 R_CtoB_ = tf::Matrix3x3(sqrt(2)/2,sqrt(2)/2,0, sqrt(2)/2,-sqrt(2)/2,0, 0,0,-1);
+// static const tf::Matrix3x3 R_CtoB_ = tf::Matrix3x3(1,0,0, 0,-1,0, 0,0,-1);
 static tf::Transform T_Cam_to_Body_ = tf::Transform(R_CtoB_, tf::Vector3(0,0,0));
 double r;
 
@@ -35,7 +36,6 @@ static bool have_odom_ = false;
 void print_tfVector3(tf::Vector3 vec);
 Eigen::Matrix3d hat(Eigen::Vector3d vec);
 Eigen::Vector3d Vec3TfToEigen(tf::Vector3 vec);
-void wrapAngle(double &angle);
 
 static void odom_cb(const nav_msgs::Odometry::ConstPtr &msg)
 {
@@ -56,6 +56,7 @@ static void odom_cb(const nav_msgs::Odometry::ConstPtr &msg)
 
   // Note: These are coupled through yaw.  Can't change one without changing the other
   tf::Vector3 a_World(1,0,0);
+  a_World.normalize();
   tf::Matrix3x3 R_B_W(q);
   //
   
@@ -99,24 +100,24 @@ static void odom_cb(const nav_msgs::Odometry::ConstPtr &msg)
 
   // Let's keep these variables in this scope (later we will want to use b)
   {
-    // Note that the convention is different than the modern day standard.  See Espiau, 1992.
-    double x0 = -P0[0];
-    double y0 = -P0[1];
+    // Note that there is an error in Chaumette 1994 with the signs of the rhos 
+    double x0 = P0[0];
+    double y0 = P0[1];
     double z0 = P0[2];
 
     // Also, different convention
-    double a = -a_Cam[0];
-    double b = -a_Cam[1];
+    double a = a_Cam[0];
+    double b = a_Cam[1];
     double c = a_Cam[2];
 
     double alpha = y0*c - z0*b;
     double beta = z0*a - x0*c;
     double gamma = x0*b - y0*a;
 
-    rho1 = (r*z0/A - gamma)/
+    rho1 = -(r*z0/A - gamma)/
     	sqrt(pow(r*x0/A - alpha, 2) + pow(r*y0/A - beta, 2));
 
-    rho2 = (r*z0/A + gamma)/
+    rho2 = -(r*z0/A + gamma)/
     	sqrt(pow(r*x0/A + alpha, 2) + pow(r*y0/A + beta, 2));
 
     double ctheta1, ctheta2, stheta1, stheta2;
@@ -137,22 +138,6 @@ static void odom_cb(const nav_msgs::Odometry::ConstPtr &msg)
     theta2 = atan2(stheta2, ctheta2);
   }
 
-  // Handle the case when rho1 or rho2 are less than zero
-  // if (rho1 < 0)
-  // {
-  // 	rho1 = - rho1;
-  // 	theta1 = theta1 - M_PI;
-  // }
-  // if (rho2 < 0)
-  // {
-  // 	rho2 = - rho2;
-  // 	theta2 = theta2 - M_PI;
-  // }
-
-  // Wrap to -Pi to Pi
-  wrapAngle(theta1);
-  wrapAngle(theta2);
-  
   // ROS_INFO_THROTTLE(1, "\e[0;36mp:  {rho1: %2.2f, rho2: %2.2f, theta1: %2.0f deg, theta2: %2.0f deg}\033[0m",
   //  rho1, rho2, theta1 * 180 / M_PI, theta2 * 180 / M_PI);
 
@@ -198,10 +183,11 @@ int main(int argc, char **argv)
 
   // Parameters
   n.param("cylinder_radius", r, 0.1);
+  ROS_INFO_ONCE("Camera simulator using r = %2.2fm", r);
 
   // Publishers
   // pub_vision_status_ = n.advertise<std_msgs::Bool>("vision_status", 1);
-  pub_image_features_ = n.advertise<cylinder_msgs::ImageFeatures>("image_features", 1);
+  pub_image_features_ = n.advertise<cylinder_msgs::ImageFeatures>("/cylinder_detection/cylinder_features", 1);
 
   // Subscribers
   ros::Subscriber sub_odom = n.subscribe("odom", 1, &odom_cb, ros::TransportHints().tcpNoDelay());
@@ -230,6 +216,7 @@ Vector3d Vec3TfToEigen(tf::Vector3 vec)
   return vec2;
 }
 
+/*
 void wrapAngle(double &angle)
 {
   while (angle < -M_PI)
@@ -238,3 +225,4 @@ void wrapAngle(double &angle)
   while (angle > M_PI)
   	angle -= 2*M_PI;
 }
+*/

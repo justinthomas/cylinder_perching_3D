@@ -39,6 +39,7 @@ static Eigen::Matrix3d tfRtoEigen(tf::Matrix3x3 tfR);
 
 // Static transformations
 static const tf::Matrix3x3 R_CtoB_ = tf::Matrix3x3(sqrt(2)/2,sqrt(2)/2,0, sqrt(2)/2,-sqrt(2)/2,0, 0,0,-1);
+// static const tf::Matrix3x3 R_CtoB_ = tf::Matrix3x3(1,0,0, 0,-1,0, 0,0,-1);
 static const tf::Transform T_CtoB_ = tf::Transform(R_CtoB_, tf::Vector3(0,0,0));
 
 //IMU buffer
@@ -117,7 +118,7 @@ static void image_features_cb(const cylinder_msgs::ImageFeatures::ConstPtr &msg)
   // Make sure that the x component of a is always positive 
   if (a[1] < 0)
   {
-    // ROS_INFO(TEXT_MAGENTA "Axis switched" TEXT_RESET);
+    ROS_INFO(TEXT_MAGENTA "Axis switched" TEXT_RESET);
     a = -1.0 * a;
   }
 
@@ -161,7 +162,7 @@ static void imu_cb(const sensor_msgs::Imu::ConstPtr &msg)
 	q[2] = msg->orientation.y;
 	q[3] = msg->orientation.z;
 
-        TooN::Vector<3> angular_velocity;
+  TooN::Vector<3> angular_velocity;
 	angular_velocity[0] = msg->angular_velocity.x;
 	angular_velocity[1] = msg->angular_velocity.y;
 	angular_velocity[2] = msg->angular_velocity.z;
@@ -172,7 +173,7 @@ static void imu_cb(const sensor_msgs::Imu::ConstPtr &msg)
 	acc[2] = msg->linear_acceleration.z;
 
 	//buffer IMU to compensate visual delay
-        acc_buff.push_front(acc);
+  acc_buff.push_front(acc);
 	omega_buff.push_front(angular_velocity);
 	orientation_buff.push_front(q);
 	time_stamp_buff.push_front(msg->header.stamp);
@@ -239,7 +240,6 @@ static void cylinder_pose_cb(const cylinder_msgs::CylinderPose::ConstPtr &msg)
   omega_buff.erase(k2, omega_buff.end());
   orientation_buff.erase(k3, orientation_buff.end());
   time_stamp_buff.erase(k4, time_stamp_buff.end());
-
   
   // Ignore raw from IMU
   double yaw, pitch, roll;
@@ -357,10 +357,10 @@ void pp_features(const double &r, const Eigen::Vector3d &P0, const Eigen::Vector
     // Eigen::Vector3d P0_pp = R_VtoC.transpose() * P0;
 
     double x0 = 0;
-    double y0 = -P1_inV(1);
+    double y0 = P1_inV(1);
     double z0 = P1_inV(2);
 
-    double a = -1;
+    double a = 1;
     double b = 0;
     double c = 0;
 
@@ -371,10 +371,10 @@ void pp_features(const double &r, const Eigen::Vector3d &P0, const Eigen::Vector
     // Determine the rhos
 
     double rho1, rho2;
-    rho1 = (r*z0/A - gamma)/
+    rho1 = -(r*z0/A - gamma)/
     	sqrt(pow(r*x0/A - alpha, 2) + pow(r*y0/A - beta, 2));
 
-    rho2 = (r*z0/A + gamma)/
+    rho2 = -(r*z0/A + gamma)/
     	sqrt(pow(r*x0/A + alpha, 2) + pow(r*y0/A + beta, 2));
 
     // Determine the angles
@@ -382,7 +382,6 @@ void pp_features(const double &r, const Eigen::Vector3d &P0, const Eigen::Vector
 
     ctheta1 = (r*x0/A - alpha)/
     	sqrt(pow(r*x0/A - alpha, 2) + pow(r*y0/A - beta, 2));
-
     ctheta2 = (r*x0/A + alpha)/
     	sqrt(pow(r*x0/A + alpha, 2) + pow(r*y0/A + beta, 2));
     stheta1 = (r*y0/A - beta)/
@@ -396,33 +395,15 @@ void pp_features(const double &r, const Eigen::Vector3d &P0, const Eigen::Vector
 
     // Handle the case when theta1 or theta2 are less than zero (we want them to both be = M_PI / 2)
     s_sign << 1, 1, 1;
+   
     if (theta1 <= 0)
-    {
-    	// This doesn't seem to happen
-    	// rho1 = - rho1;
-    	// theta1 = theta1 + M_PI;
-      // ROS_INFO_THROTTLE(1, "rho1 sign change");
       s_sign(0) = -1;
-    }
-    if (theta2 <= 0)
-    {
-      // This seems to always happen
-    	// rho2 = - rho2;
-    	// theta2 = theta2 + M_PI;
-    	// ROS_INFO_THROTTLE(1, "rho2 sign change");
-    	s_sign(1) = -1;
-    }
     
-    /*
-    if (theta1 > 0 && theta2 > 0)
-    {
-      ROS_INFO_THROTTLE(1, TEXT_BLUE "AHHH" TEXT_RESET);
-    }
-    */
-
+    if (theta2 <= 0)
+    	s_sign(1) = -1;
+    
     // By default, we are putting this in the x-left, y-up frame
-    double u = -P1_inV(0) / P1_inV(2);
-    s_sign(2) = - 1;
+    double u = P1_inV(0) / P1_inV(2);
 
     // Return the feature vector
     s << rho1, rho2, u;
@@ -469,7 +450,6 @@ int main(int argc, char **argv)
                 KalmanFilter::ProcessCov_t::Identity(),
                 proc_noise_diag.asDiagonal(),
                 meas_noise_diag.asDiagonal());
-  //
 
   // Publishers
   pub_features_ = n.advertise<cylinder_msgs::CylinderPose>("cylinder_pose", 1);

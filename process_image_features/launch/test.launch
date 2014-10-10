@@ -35,7 +35,6 @@
       <remap from="~from_robot" to="from_robot"/>
     </node>
 
-
     <node pkg="process_image_features"
       type="process_image_features"
       name="process_image_features"
