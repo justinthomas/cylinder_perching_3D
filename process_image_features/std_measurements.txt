@@ -1,0 +1,4 @@
+standard deviation measurements
+rho1 0.0046
+rho2 0.0046
+u 0.05

@@ -100,6 +100,7 @@ static void Jacobians(const Vector3d &P1_inV, const Vector3d &sdot, Matrix3d &J,
 double r;
 float kR_[3], kOm_[3], corrections_[3];
 bool enable_motors_, use_external_yaw_;
+double kprho, kpu, kdrho, kdu;
 
 // Quadrotor Pose
 static geometry_msgs::Point pos_;
@@ -443,8 +444,16 @@ static void image_update_cb(const cylinder_msgs::ParallelPlane::ConstPtr &msg)
   // ROS_INFO_THROTTLE(1, TEXT_CYAN   "Velocity Estimate in World: {%2.2f, %2.2f, %2.2f}" TEXT_RESET, vel_world(0), vel_world(1), vel_world(2));
   
   // These will eventually be set by a trajectory
-  Vector3d sdes(0.1,0.1,0), sdotdes(0,0,0), sddotdes(0,0,0), sdddotdes(0,0,0);
+  Vector3d sdes(-0.1,0.1,0.437), sdotdes(0,0,0), sddotdes(0,0,0), sdddotdes(0,0,0);
 
+  // Make sure that the desired and actual are correlated
+  if (s[1] < s[0])
+  {
+    double temp = sdes[0];
+    sdes[0] = sdes[1];
+    sdes[1] = temp;
+  }
+    
   // Useful defs
   double g = 9.81;
   static const Vector3d e3(0,0,1);
@@ -470,10 +479,8 @@ static void image_update_cb(const cylinder_msgs::ParallelPlane::ConstPtr &msg)
   */
 
   // Gains
-  double kprho(1), kpu(1), kdrho(1), kdu(1);
   Vector3d kx, kv;
-  // kx << kprho, kprho, kpu;
-  kx << 1, 1, 1;
+  kx << kprho, kprho, kpu;
   kv << kdrho, kdrho, kdu;
 
   // Temp output
@@ -481,7 +488,7 @@ static void image_update_cb(const cylinder_msgs::ParallelPlane::ConstPtr &msg)
   // ROS_INFO_THROTTLE(1, "\e[93mdelta_force_in_pp: {%2.2f, %2.2f, %2.2f}\e[0m", temp(0), temp(1), temp(2));
 
   // Nominal thrust (in the world)
-  Vector3d force = mass_ * g * e3 + mass_ * (
+  Vector3d force = 0 * mass_ * g * e3 + mass_ * (
       kx.asDiagonal() * R_VtoW * Jinv * e_pos + kv.asDiagonal() * R_VtoW * Jinv * e_vel + Jinv * sddotdes);
   // ROS_INFO_THROTTLE(1, TEXT_GREEN "force: {%2.2f, %2.2f, %2.2f}" TEXT_RESET, force(0), force(1), force(2));
   
@@ -746,47 +753,58 @@ static void odom_cb(const nav_msgs::Odometry::ConstPtr &msg)
 int main(int argc, char **argv)
 {
   ros::init(argc, argv, "state_control");
-  ros::NodeHandle n;
+  ros::NodeHandle n("~");
 
+  // Load params
+  
   // Now, we need to set the formation offsets for this robot
-  n.param("state_control/offsets/x", xoff, 0.0);
-  n.param("state_control/offsets/y", yoff, 0.0);
-  n.param("state_control/offsets/z", zoff, 0.0);
-  n.param("state_control/offsets/yaw", yaw_off, 0.0);
-  n.param("cylinder_radius", r, 0.1);
+  n.param("offsets/x", xoff, 0.0);
+  n.param("offsets/y", yoff, 0.0);
+  n.param("offsets/z", zoff, 0.0);
+  n.param("offsets/yaw", yaw_off, 0.0);
   ROS_INFO("Quad using offsets: {xoff: %2.2f, yoff: %2.2f, zoff: %2.2f, yaw_off: %2.2f}", xoff, yoff, zoff, yaw_off);
+ 
+  // Radius 
+  n.param("/cylinder_radius", r, 0.1);
+
+  // Vision gains
+  n.param("vision_gains/kprho", kprho, 0.0);
+  n.param("vision_gains/kdrho", kdrho, 0.0);
+  n.param("vision_gains/kpu", kpu, 0.0);
+  n.param("vision_gains/kdu", kdu, 0.0);
+  ROS_INFO("Vision using gains: {kprho: %2.2f, kpu: %2.2f, kdrho: %2.2f, kdu: %2.2f}", kprho, kpu, kdrho, kdu);
 
   // n.param("state_control/traj_filename", traj_filename, string("traj.csv"));
-  n.param("state_control/safety_catch", safety, true);
-  n.param("mass", mass_, 0.5);
+  n.param("safety_catch", safety, true);
+  n.param("/mass", mass_, 0.5);
 
   // Params needed for so3 control from vision
   n.param("use_external_yaw", use_external_yaw_, true);
 
   double kR[3], kOm[3];
-  n.param("gains/rot/x", kR[0], 1.5);
-  n.param("gains/rot/y", kR[1], 1.5);
-  n.param("gains/rot/z", kR[2], 1.0);
-  n.param("gains/ang/x", kOm[0], 0.13);
-  n.param("gains/ang/y", kOm[1], 0.13);
-  n.param("gains/ang/z", kOm[2], 0.1);
+  n.param("/gains/rot/x", kR[0], 1.5);
+  n.param("/gains/rot/y", kR[1], 1.5);
+  n.param("/gains/rot/z", kR[2], 1.0);
+  n.param("/gains/ang/x", kOm[0], 0.13);
+  n.param("/gains/ang/y", kOm[1], 0.13);
+  n.param("/gains/ang/z", kOm[2], 0.1);
   kR_[0] = kR[0], kR_[1] = kR[1], kR_[2] = kR[2];
   kOm_[0] = kOm[0], kOm_[1] = kOm[1], kOm_[2] = kOm[2];
 
   double corrections[3];
-  n.param("corrections/kf", corrections[0], 0.0);
-  n.param("corrections/r", corrections[1], 0.0);
-  n.param("corrections/p", corrections[2], 0.0);
+  n.param("/corrections/kf", corrections[0], 0.0);
+  n.param("/corrections/r", corrections[1], 0.0);
+  n.param("/corrections/p", corrections[2], 0.0);
   corrections_[0] = corrections[0], corrections_[1] = corrections[1], corrections_[2] = corrections[2];
 
   /////////////////
   // Publishers //
   ///////////////
   srv_transition_= n.serviceClient<controllers_manager::Transition>("controllers_manager/transition");
-  pub_goal_min_jerk_ = n.advertise<geometry_msgs::Vector3>("controllers_manager/line_tracker_min_jerk/goal", 10);
-  pub_goal_distance_ = n.advertise<geometry_msgs::Vector3>("controllers_manager/line_tracker_distance/goal", 10);
-  pub_goal_velocity_ = n.advertise<quadrotor_msgs::FlatOutputs>("controllers_manager/velocity_tracker/vel_cmd_with_yaw", 10);
-  pub_goal_yaw_ = n.advertise<quadrotor_msgs::FlatOutputs>("controllers_manager/line_tracker_yaw/goal", 10);
+  pub_goal_min_jerk_ = n.advertise<geometry_msgs::Vector3>("min_jerk_goal", 10);
+  pub_goal_distance_ = n.advertise<geometry_msgs::Vector3>("line_tracker_distance_goal", 10);
+  pub_goal_velocity_ = n.advertise<quadrotor_msgs::FlatOutputs>("vel_goal", 10);
+  pub_goal_yaw_ = n.advertise<quadrotor_msgs::FlatOutputs>("line_tracker_yaw_goal", 10);
   // pub_goal_trajectory_ = n.advertise<quadrotor_msgs::PositionCommand>("controllers_manager/trajectory_tracker/goal", 1);
   // pub_info_bool_ = n.advertise<std_msgs::Bool>("traj_signal", 1);
   pub_motors_ = n.advertise<std_msgs::Bool>("motors", 10);
@@ -795,7 +813,7 @@ int main(int argc, char **argv)
 
   // Subscribers
   ros::Subscriber sub_odom = n.subscribe("odom", 10, &odom_cb, ros::TransportHints().tcpNoDelay());
-  ros::Subscriber sub_imu = n.subscribe("quad_decode_msg/imu", 10, &imu_cb, ros::TransportHints().tcpNoDelay());
+  ros::Subscriber sub_imu = n.subscribe("imu", 10, &imu_cb, ros::TransportHints().tcpNoDelay());
   ros::Subscriber sub_nanokontrol = n.subscribe("/nanokontrol2", 10, nanokontrol_cb, ros::TransportHints().tcpNoDelay());
   ros::Subscriber sub_vision = n.subscribe("image_features_pp", 10, &image_update_cb, ros::TransportHints().tcpNoDelay());
 

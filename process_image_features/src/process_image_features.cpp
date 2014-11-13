@@ -404,7 +404,10 @@ void pp_features(const double &r, const Eigen::Vector3d &P0, const Eigen::Vector
     
     if (theta2 <= 0)
     	s_sign(1) = -1;
-    
+
+    if (fabs(theta1 * s_sign(0) - M_PI / 2) > 0.01 || fabs(theta2 * s_sign(1) - M_PI / 2) > 0.01)
+      cout << "Angle is wrong: theta1 = " << theta1 * s_sign(0) << ", theta2 = " << theta2 * s_sign(1) << endl;
+
     // By default, we are putting this in the x-left, y-up frame
     double u = P1_inV(0) / P1_inV(2);
 

@@ -3,10 +3,13 @@
   <arg name="model" default="QuadrotorAlpha" />
   
   <group ns="$(arg model)">
-    
+
+    <arg name="mass" default="0.73"/> 
     <param name="cylinder_radius" value="0.04" /> 
-    <param name="mass" value="0.73" />
-  
+    
+    <param name="mass" value="$(arg mass)" />
+    <rosparam file="$(find state_control_cylinder)/config/hummingbird_gains.yaml"/>
+    
     <node pkg="nodelet"
       type="nodelet"
       name="standalone_nodelet"
@@ -52,7 +55,7 @@
       <rosparam file="$(find state_control_cylinder)/config/controller_params.yaml"/>
       <remap from="~odom" to="odom"/>
       <remap from="~cmd" to="position_cmd"/>
-    </node>
+          </node>
     
     <node pkg="nodelet"
       type="nodelet"
@@ -65,6 +68,7 @@
       <remap from="~motors" to="motors"/>
       <remap from="~corrections" to="corrections"/>
       <remap from="~so3_cmd" to="so3_cmd"/>
+      <param name="mass" value="$(arg mass)" />
       <rosparam file="$(find state_control_cylinder)/config/hummingbird_gains.yaml"/>
     </node>
     
@@ -74,9 +78,25 @@
 	    type="state_control"
 	    name="state_control"
       output="screen">
+      <rosparam file="$(find state_control_cylinder)/config/vision_params.yaml" />
       <rosparam file="$(find state_control_cylinder)/config/$(arg model)_params.yaml" />
       <rosparam file="$(find state_control_cylinder)/config/hummingbird_gains.yaml" />
       <param name="safety_catch" value="true"/>
+
+      <!-- Publisher Remappings --> 
+      <remap from="~motors" to="motors"/>
+      <remap from="~estop" to="estop"/>
+      <remap from="~so3_cmd" to="so3_cmd"/>
+      <remap from="~min_jerk_goal" to="controllers_manager/line_tracker_min_jerk/goal"/>
+      <remap from="~line_tracker_distance_goal" to="controllers_manager/line_tracker_distance/goal"/>
+      <remap from="~vel_goal" to="controllers_manager/velocity_tracker/vel_cmd_with_yaw"/>
+      <remap from="~line_tracker_yaw_goal" to="controllers_manager/line_tracker_yaw/goal"/>
+
+      <!-- Subscriber Remappings -->
+      <remap from="~imu" to="quad_decode_msg/imu"/>
+      <remap from="~odom" to="odom"/>
+      <remap from="~image_features_pp" to="image_features_pp"/>
+
       <!-- remap from="so3_cmd" to="so3_cmd_vision"/ -->
     </node>
 
@@ -84,7 +104,6 @@
       type="process_image_features"
       name="process_image_features"
       output="screen">
-      <param name="camera_fps" value="30"/>
     </node>
 
   </group>
