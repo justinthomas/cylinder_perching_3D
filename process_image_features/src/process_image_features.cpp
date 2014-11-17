@@ -118,7 +118,7 @@ static void image_features_cb(const cylinder_msgs::ImageFeatures::ConstPtr &msg)
   // Make sure that the x component of a is always positive 
   if (a[1] < 0)
   {
-    ROS_INFO(TEXT_MAGENTA "Axis switched" TEXT_RESET);
+    // ROS_INFO(TEXT_MAGENTA "Axis switched" TEXT_RESET);
     a = -1.0 * a;
   }
 

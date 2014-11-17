@@ -98,11 +98,12 @@ static ros::Publisher so3_command_pub_;
 static void Jacobians(const Vector3d &P1_inV, const Vector3d &sdot, Matrix3d &J, Matrix3d &Jinv, Matrix3d &Jdot);
 // static void sim_pp_features(const double &r, const Eigen::Vector3d &P1_inV, const Eigen::Vector3d &P0, Eigen::Vector3d &s);
 double r;
-float kR_[3], kOm_[3], corrections_[3];
+double kR_[3], kOm_[3], corrections_[3];
 bool enable_motors_, use_external_yaw_;
 double kprho, kpu, kdrho, kdu;
+Vector3d sdes;
 
-// Quadrotor Pose
+  // Quadrotor Pose
 static geometry_msgs::Point pos_;
 static geometry_msgs::Vector3 vel_;
 static geometry_msgs::Quaternion ori_;
@@ -444,11 +445,19 @@ static void image_update_cb(const cylinder_msgs::ParallelPlane::ConstPtr &msg)
   // ROS_INFO_THROTTLE(1, TEXT_CYAN   "Velocity Estimate in World: {%2.2f, %2.2f, %2.2f}" TEXT_RESET, vel_world(0), vel_world(1), vel_world(2));
   
   // These will eventually be set by a trajectory
-  Vector3d sdes(-0.1,0.1,0.437), sdotdes(0,0,0), sddotdes(0,0,0), sdddotdes(0,0,0);
+  Vector3d sdotdes(0,0,0), sddotdes(0,0,0), sdddotdes(0,0,0); // sdes(-0.2,0.2,0.437), 
 
+  // In the next block, we require sdes[0] < sdes[1]
+  if (sdes[0] > sdes[1])
+  {
+    double temp = sdes[0];
+    sdes[0] = sdes[1];
+    sdes[1] = temp;
+  }
   // Make sure that the desired and actual are correlated
   if (s[1] < s[0])
   {
+    // ROS_INFO("Switching sdes[0] and sdes[1]");
     double temp = sdes[0];
     sdes[0] = sdes[1];
     sdes[1] = temp;
@@ -461,9 +470,9 @@ static void image_update_cb(const cylinder_msgs::ParallelPlane::ConstPtr &msg)
   // Errors
   Vector3d e_pos(sdes - s), e_vel(sdotdes - sdot);
   
-  // ROS_INFO_THROTTLE(1, TEXT_MAGENTA "s    = {%2.2f, %2.2f, %2.2f}" TEXT_RESET, s(0), s(1), s(2));
-  // ROS_INFO_THROTTLE(1, TEXT_MAGENTA "sdes = {%2.2f, %2.2f, %2.2f}" TEXT_RESET, sdes(0), sdes(1), sdes(2));
-  // ROS_INFO_THROTTLE(1, "\e[91me_pos: {%2.2f, %2.2f, %2.2f}\e[0m", e_pos(0), e_pos(1), e_pos(2));
+  ROS_INFO_THROTTLE(1, TEXT_MAGENTA "s    = {%2.2f, %2.2f, %2.2f}" TEXT_RESET, s(0), s(1), s(2));
+  ROS_INFO_THROTTLE(1, TEXT_MAGENTA "sdes = {%2.2f, %2.2f, %2.2f}" TEXT_RESET, sdes(0), sdes(1), sdes(2));
+  ROS_INFO_THROTTLE(1, "\e[91me_pos: {%2.2f, %2.2f, %2.2f}\e[0m", e_pos(0), e_pos(1), e_pos(2));
   // ROS_INFO_THROTTLE(1, "\e[93me_vel: {%2.2f, %2.2f, %2.2f}\e[0m", e_vel(0), e_vel(1), e_vel(2));
 
   /*
@@ -488,16 +497,21 @@ static void image_update_cb(const cylinder_msgs::ParallelPlane::ConstPtr &msg)
   // ROS_INFO_THROTTLE(1, "\e[93mdelta_force_in_pp: {%2.2f, %2.2f, %2.2f}\e[0m", temp(0), temp(1), temp(2));
 
   // Nominal thrust (in the world)
-  Vector3d force = 0 * mass_ * g * e3 + mass_ * (
+  Vector3d force = mass_ * g * e3 + mass_ * (
       kx.asDiagonal() * R_VtoW * Jinv * e_pos + kv.asDiagonal() * R_VtoW * Jinv * e_vel + Jinv * sddotdes);
+  
+  // For now, reduce the thrust magnitude
+  force = 0.9 * mass_ * g * force.normalized();
+  
   // ROS_INFO_THROTTLE(1, TEXT_GREEN "force: {%2.2f, %2.2f, %2.2f}" TEXT_RESET, force(0), force(1), force(2));
   
-  // Vector3d force1 = mass_ * kx.asDiagonal() * T * e_pos;
-  // ROS_INFO_THROTTLE(1, TEXT_GREEN "Position component of force: {%2.2f, %2.2f, %2.2f}" TEXT_RESET, force1(0), force1(1), force1(2));
+  Vector3d force1 = mass_ * kx.asDiagonal() * R_VtoW * Jinv * e_pos;
+  ROS_INFO_THROTTLE(1, TEXT_GREEN "Position component of force: {%2.2f, %2.2f, %2.2f}" TEXT_RESET, force1(0), force1(1), force1(2));
   // Vector3d force2 = mass_ * kv.asDiagonal() * T * e_vel;
   // ROS_INFO_THROTTLE(1, TEXT_RED "Velocity component of force: {%2.2f, %2.2f, %2.2f}" TEXT_RESET, force2(0), force2(1), force2(2));
 
   double des_yaw(0), des_yaw_dot(0);
+  des_yaw = des_yaw + yaw_off;
   Eigen::Vector3d b1c, b2c, b3c;
   Eigen::Vector3d b1d(cos(des_yaw), sin(des_yaw), 0);
 
@@ -776,26 +790,37 @@ int main(int argc, char **argv)
 
   // n.param("state_control/traj_filename", traj_filename, string("traj.csv"));
   n.param("safety_catch", safety, true);
-  n.param("/mass", mass_, 0.5);
+  if (!safety)
+    ROS_WARN("Safety catch is off!");
+  
+  n.param("mass", mass_, 0.5);
+  ROS_INFO("State_control using mass = %2.2f", mass_); 
 
   // Params needed for so3 control from vision
   n.param("use_external_yaw", use_external_yaw_, true);
 
-  double kR[3], kOm[3];
-  n.param("/gains/rot/x", kR[0], 1.5);
-  n.param("/gains/rot/y", kR[1], 1.5);
-  n.param("/gains/rot/z", kR[2], 1.0);
-  n.param("/gains/ang/x", kOm[0], 0.13);
-  n.param("/gains/ang/y", kOm[1], 0.13);
-  n.param("/gains/ang/z", kOm[2], 0.1);
-  kR_[0] = kR[0], kR_[1] = kR[1], kR_[2] = kR[2];
-  kOm_[0] = kOm[0], kOm_[1] = kOm[1], kOm_[2] = kOm[2];
+  // double kR[3], kOm[3];
+  n.param("gains/rot/x", kR_[0], 1.5);
+  n.param("gains/rot/y", kR_[1], 1.5);
+  n.param("gains/rot/z", kR_[2], 1.0);
+  n.param("gains/ang/x", kOm_[0], 0.13);
+  n.param("gains/ang/y", kOm_[1], 0.13);
+  n.param("gains/ang/z", kOm_[2], 0.1);
+  // kR_[0] = kR[0], kR_[1] = kR[1], kR_[2] = kR[2];
+  // kOm_[0] = kOm[0], kOm_[1] = kOm[1], kOm_[2] = kOm[2];
+  ROS_INFO("Attitude gains: kR: {%2.2f, %2.2f, %2.2f}, kOm: {%2.2f, %2.2f, %2.2f}", kR_[0], kR_[1], kR_[2], kOm_[0], kOm_[1], kOm_[2]);
 
-  double corrections[3];
-  n.param("/corrections/kf", corrections[0], 0.0);
-  n.param("/corrections/r", corrections[1], 0.0);
-  n.param("/corrections/p", corrections[2], 0.0);
-  corrections_[0] = corrections[0], corrections_[1] = corrections[1], corrections_[2] = corrections[2];
+  // double corrections[3];
+  n.param("/corrections/kf", corrections_[0], 0.0);
+  n.param("/corrections/r", corrections_[1], 0.0);
+  n.param("/corrections/p", corrections_[2], 0.0);
+  // corrections_[0] = corrections[0], corrections_[1] = corrections[1], corrections_[2] = corrections[2];
+
+  // The desired feature vector for now
+  n.param("sdes/rho1", sdes[0], -0.1);
+  n.param("sdes/rho2", sdes[1], 0.1);
+  n.param("sdes/u", sdes[2], 0.4);  
+  ROS_INFO("sdes: {%2.2f, %2.2ff, %2.2f}", sdes[0], sdes[1], sdes[2]);
 
   /////////////////
   // Publishers //
