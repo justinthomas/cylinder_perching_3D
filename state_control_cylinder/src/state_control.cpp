@@ -501,7 +501,7 @@ static void image_update_cb(const cylinder_msgs::ParallelPlane::ConstPtr &msg)
       kx.asDiagonal() * R_VtoW * Jinv * e_pos + kv.asDiagonal() * R_VtoW * Jinv * e_vel + Jinv * sddotdes);
   
   // For now, reduce the thrust magnitude
-  force = 0.9 * mass_ * g * force.normalized();
+  // force = 0.9 * mass_ * g * force.normalized();
   
   // ROS_INFO_THROTTLE(1, TEXT_GREEN "force: {%2.2f, %2.2f, %2.2f}" TEXT_RESET, force(0), force(1), force(2));
   

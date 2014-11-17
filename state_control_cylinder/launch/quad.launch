@@ -55,7 +55,7 @@
       <rosparam file="$(find state_control_cylinder)/config/controller_params.yaml"/>
       <remap from="~odom" to="odom"/>
       <remap from="~cmd" to="position_cmd"/>
-          </node>
+    </node>
     
     <node pkg="nodelet"
       type="nodelet"

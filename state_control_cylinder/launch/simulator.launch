@@ -1,17 +1,19 @@
 <launch>
 
   <arg name="model" default="quadrotor" />
-  <arg name="cylinder_radius" default="0.1" /> 
 
   <group ns="$(arg model)">
-
+    
+    <arg name="mass" default="0.73"/>
+    <arg name="cylinder_radius" default="0.1" /> 
+    
     <node pkg="quadrotor_simulator"
       type="quadrotor_simulator_so3"
       name="$(arg model)_simulator_so3"
       output="screen">
       <param name="rate/odom" value="100.0"/>
       <remap from="~odom" to="odom"/>
-      <remap from="~imu" to="/$(arg model)/quad_decode_msg/imu"/>
+      <remap from="~imu" to="quad_decode_msg/imu"/>
       <remap from="~cmd" to="so3_cmd"/>
     </node>
     
@@ -43,8 +45,8 @@
       <remap from="~motors" to="motors"/>
       <remap from="~corrections" to="corrections"/>
       <remap from="~so3_cmd" to="so3_cmd"/>
+      <param name="mass" value="$(arg mass)" />
       <rosparam file="$(find state_control_cylinder)/config/hummingbird_gains.yaml"/>
-      <param name="mass" value="0.5"/>
     </node>
 
     <node pkg="mesh_visualization"
@@ -60,14 +62,31 @@
     </node>
 
     <!-- This is the state control node -->
+    <rosparam file="$(find state_control_cylinder)/config/vision_params.yaml" />
     <node pkg="state_control_cylinder"
 	    type="state_control"
 	    name="state_control"
       output="screen">
+      <rosparam file="$(find state_control_cylinder)/config/vision_params.yaml" />
       <rosparam file="$(find state_control_cylinder)/config/$(arg model)_params.yaml" />
       <rosparam file="$(find state_control_cylinder)/config/hummingbird_gains.yaml" />
       <param name="safety_catch" value="false"/>
-      <param name="traj_filename" type="string" value="/home/justin/Dropbox/papers_and_posters/2015-ICRA_Gecko_Perching/current_experiment/traj.csv"/>
+
+      <!-- Publisher Remappings --> 
+      <remap from="~motors" to="motors"/>
+      <remap from="~estop" to="estop"/>
+      <remap from="~so3_cmd" to="so3_cmd"/>
+      <remap from="~min_jerk_goal" to="controllers_manager/line_tracker_min_jerk/goal"/>
+      <remap from="~line_tracker_distance_goal" to="controllers_manager/line_tracker_distance/goal"/>
+      <remap from="~vel_goal" to="controllers_manager/velocity_tracker/vel_cmd_with_yaw"/>
+      <remap from="~line_tracker_yaw_goal" to="controllers_manager/line_tracker_yaw/goal"/>
+
+      <!-- Subscriber Remappings -->
+      <remap from="~imu" to="quad_decode_msg/imu"/>
+      <remap from="~odom" to="odom"/>
+      <remap from="~image_features_pp" to="image_features_pp"/>
+
+      <!-- remap from="so3_cmd" to="so3_cmd_vision"/ -->
     </node>
 
     <node pkg="camera_simulator"
@@ -81,7 +100,6 @@
       type="process_image_features"
       name="process_image_features"
       output="screen">
-      <param name="cylinder_radius" value="$(arg cylinder_radius)"/>
     </node>
 
   </group>
