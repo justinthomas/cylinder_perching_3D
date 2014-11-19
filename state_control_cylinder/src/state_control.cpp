@@ -505,7 +505,7 @@ static void image_update_cb(const cylinder_msgs::ParallelPlane::ConstPtr &msg)
   
   // ROS_INFO_THROTTLE(1, TEXT_GREEN "force: {%2.2f, %2.2f, %2.2f}" TEXT_RESET, force(0), force(1), force(2));
   
-  Vector3d force1 = mass_ * kx.asDiagonal() * R_VtoW * Jinv * e_pos;
+  Vector3d force1 = mass_ * R_VtoW * Jinv * kx.asDiagonal() * e_pos;
   ROS_INFO_THROTTLE(1, TEXT_GREEN "Position component of force: {%2.2f, %2.2f, %2.2f}" TEXT_RESET, force1(0), force1(1), force1(2));
   // Vector3d force2 = mass_ * kv.asDiagonal() * T * e_vel;
   // ROS_INFO_THROTTLE(1, TEXT_RED "Velocity component of force: {%2.2f, %2.2f, %2.2f}" TEXT_RESET, force2(0), force2(1), force2(2));
