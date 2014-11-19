@@ -1,17 +1,22 @@
 sdes:
   rho1: -0.05
   rho2: -0.02
-  u: 0.4
+  u: 0.12
 
 vision_gains:
-  kprho: 1.0 
-  kpu: 1.0
-  kdrho: 0.3
-  kdu: 0.3
+  kprho: 7.0 
+  kpu: 0.0
+  kdrho: 1.0
+  kdu: 0.0
+
+alpha: 1.0
 
 camera_fps: 50
 
 # Acceleration for the kalman filter
 max_accel: 0.5
-measurement_noise_rhos: 0.0046
-measurement_noise_u: 0.05
+measurement_noise_rhos: 0.0023
+#measurement_noise_rhos: 0.0046
+#measurement_noise_u: 0.005
+measurement_noise_u: 0.01
+#measurement_noise_u: 0.05

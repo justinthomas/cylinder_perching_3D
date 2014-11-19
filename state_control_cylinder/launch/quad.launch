@@ -1,15 +1,19 @@
 <launch>
 
+  <!-- Giuseppe's stuff -->
+  <include file="$(find cylinder_detection)/launch/cylinder_detection.launch">
+  </include>
+
   <arg name="model" default="QuadrotorAlpha" />
-  
+
   <group ns="$(arg model)">
 
-    <arg name="mass" default="0.73"/> 
-    <param name="cylinder_radius" value="0.04" /> 
-    
+    <arg name="mass" default="0.73"/>
+    <param name="cylinder_radius" value="0.04" />
+
     <param name="mass" value="$(arg mass)" />
     <rosparam file="$(find state_control_cylinder)/config/hummingbird_gains.yaml"/>
-    
+
     <node pkg="nodelet"
       type="nodelet"
       name="standalone_nodelet"
@@ -56,7 +60,7 @@
       <remap from="~odom" to="odom"/>
       <remap from="~cmd" to="position_cmd"/>
     </node>
-    
+
     <node pkg="nodelet"
       type="nodelet"
       args="load so3_control/SO3ControlNodelet standalone_nodelet"
@@ -71,7 +75,7 @@
       <param name="mass" value="$(arg mass)" />
       <rosparam file="$(find state_control_cylinder)/config/hummingbird_gains.yaml"/>
     </node>
-    
+
     <!-- This is the state control node -->
     <rosparam file="$(find state_control_cylinder)/config/vision_params.yaml" />
     <node pkg="state_control_cylinder"
@@ -83,7 +87,7 @@
       <rosparam file="$(find state_control_cylinder)/config/hummingbird_gains.yaml" />
       <param name="safety_catch" value="true"/>
 
-      <!-- Publisher Remappings --> 
+      <!-- Publisher Remappings -->
       <remap from="~motors" to="motors"/>
       <remap from="~estop" to="estop"/>
       <remap from="~so3_cmd" to="so3_cmd"/>

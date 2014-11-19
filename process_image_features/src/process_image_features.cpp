@@ -36,6 +36,7 @@ static bool imu_info_(false);
 static KalmanFilter kf;
 static void pp_features(const double &r, const Eigen::Vector3d &P1_inV, const Eigen::Vector3d &P0, Eigen::Vector3d &s, Eigen::Vector3d &s_sign);
 static Eigen::Matrix3d tfRtoEigen(tf::Matrix3x3 tfR);
+static double filt_alpha;
 
 // Static transformations
 static const tf::Matrix3x3 R_CtoB_ = tf::Matrix3x3(sqrt(2)/2,sqrt(2)/2,0, sqrt(2)/2,-sqrt(2)/2,0, 0,0,-1);
@@ -53,13 +54,48 @@ int imu_semaphore = 0;
 // Functions
 static void image_features_cb(const cylinder_msgs::ImageFeatures::ConstPtr &msg)
 {
+  Vector4d im_feats(msg->theta1, msg->theta2, msg->rho1, msg->rho2);
+  static Vector4d last_feature_vec = im_feats;
+
+  ROS_INFO(TEXT_RED "Features: {%2.2f, %2.2f, %2.2f, %2.2f}" TEXT_RESET, im_feats[0], im_feats[1], im_feats[2], im_feats[3]);
+
+  // Handle angle wrapping
+  while (last_feature_vec[0] < im_feats[0] - M_PI/2)
+  {
+    last_feature_vec[0] = last_feature_vec[0] + M_PI; // Theta
+    last_feature_vec[2] = - last_feature_vec[2];      // Rho
+  }
+  while (last_feature_vec[0] > im_feats[0] + M_PI/2)
+  {
+    last_feature_vec[0] = last_feature_vec[0] - M_PI; // Theta
+    last_feature_vec[2] = - last_feature_vec[2];      // Rho
+  }
+  while (last_feature_vec[1] < im_feats[1] - M_PI/2)
+  {
+    last_feature_vec[1] = last_feature_vec[1] + M_PI; // Theta
+    last_feature_vec[3] = - last_feature_vec[3];      // Rho
+  }
+  while (last_feature_vec[1] > im_feats[1] + M_PI/2)
+  {
+    last_feature_vec[1] = last_feature_vec[1] - M_PI; // Theta
+    last_feature_vec[3] = - last_feature_vec[3];      // Rho
+  }
+
+  // Could this make the sign of the rhos change?
+
+  // Simple linear filter on the image features
+  im_feats = filt_alpha * im_feats + (1-filt_alpha) * last_feature_vec;
+  last_feature_vec = im_feats;
+
+  ROS_INFO(TEXT_GREEN "Filt Fet: {%2.2f, %2.2f, %2.2f, %2.2f}" TEXT_RESET, im_feats[0], im_feats[1], im_feats[2], im_feats[3]);
+
   double ctheta1, ctheta2, stheta1, stheta2, rho1, rho2;
-  ctheta1 = std::cos(msg->theta1);
-  stheta1 = std::sin(msg->theta1);
-  ctheta2 = std::cos(msg->theta2);
-  stheta2 = std::sin(msg->theta2);
-  rho1 = msg->rho1;
-  rho2 = msg->rho2;
+  ctheta1 = std::cos(im_feats[0]);
+  stheta1 = std::sin(im_feats[0]);
+  ctheta2 = std::cos(im_feats[1]);
+  stheta2 = std::sin(im_feats[1]);
+  rho1 = im_feats[2];
+  rho2 = im_feats[3];
 
   tf::Vector3 n1(ctheta1, stheta1, -1*rho1);
   tf::Vector3 n2(ctheta2, stheta2, -1*rho2);
@@ -72,11 +108,11 @@ static void image_features_cb(const cylinder_msgs::ImageFeatures::ConstPtr &msg)
     if (-n1[2] < 0)
       n1 = -1.0 * n1;
 
-    // The dot product should be negative 
+    // The dot product should be negative
     if (tf::tfDot(n1, n2) > 0)
       n2 = -1.0 * n2;
   }
-  else 
+  else
   {
     if (-n2[2] < 0)
       n2 = -1.0 * n2;
@@ -89,7 +125,7 @@ static void image_features_cb(const cylinder_msgs::ImageFeatures::ConstPtr &msg)
 
   // Delta
   tf::Vector3 Delta(0.5 * (n1 / sqrt(tf::tfDot(n1, n1)) + n2 / sqrt(tf::tfDot(n2, n2))));
-  
+
   // We know that the cylinder is in front of the camera
   if (Delta[2] < 0)
   {
@@ -114,8 +150,9 @@ static void image_features_cb(const cylinder_msgs::ImageFeatures::ConstPtr &msg)
   // The axis of the cylinder in the camera frame
   tf::Vector3 a = n2Crossn1 / std::sqrt(tf::tfDot(n2Crossn1, n2Crossn1)); // tfVector3Norm(n2Crossn1);
   // ROS_INFO_THROTTLE(1, "\e[0;36ma_est = {%2.2f, %2.2f, %2.2f}\e[0m", a[0], a[1], a[2]);
-  
-  // Make sure that the x component of a is always positive 
+
+  // Make sure that the y component (in the camera frame) of a is always positive
+  // #### Not a good test
   if (a[1] < 0)
   {
     // ROS_INFO(TEXT_MAGENTA "Axis switched" TEXT_RESET);
@@ -145,9 +182,15 @@ static void image_features_cb(const cylinder_msgs::ImageFeatures::ConstPtr &msg)
   // Publish the info
   cylinder_msgs::CylinderPose cyl_msg;
   cyl_msg.stamp = msg->stamp;
+  // cyl_msg.features.filt.theta1 = im_feats[0];
+  // cyl_msg.features.filt.theta2 = im_feats[1];
+  // cyl_msg.features.filt.rho1 = im_feats[2];
+  // cyl_msg.features.filt.rho2 = im_feats[3];
   cyl_msg.a.x = a[0]; cyl_msg.a.y = a[1]; cyl_msg.a.z = a[2];
   cyl_msg.P0.x = P0[0]; cyl_msg.P0.y = P0[1]; cyl_msg.P0.z = P0[2];
   cyl_msg.P1.x = P1[0]; cyl_msg.P1.y = P1[1]; cyl_msg.P1.z = P1[2];
+  cyl_msg.n1.x = n1[0]; cyl_msg.n1.y = n1[1]; cyl_msg.n1.z = n1[2];
+  cyl_msg.n2.x = n2[0]; cyl_msg.n2.y = n2[1]; cyl_msg.n2.z = n2[2];
   pub_features_.publish(cyl_msg);
 }
 
@@ -199,7 +242,7 @@ static void cylinder_pose_cb(const cylinder_msgs::CylinderPose::ConstPtr &msg)
 
   // Determine the Rotation from world to Camera
   static tf::Vector3 g_in_C, a_in_C, z_in_C, y_in_C, x_in_C;
-   
+
   //Find the measurement
  //Data should be alligned
   // while(imu_semaphore==1) usleep(10);
@@ -240,11 +283,12 @@ static void cylinder_pose_cb(const cylinder_msgs::CylinderPose::ConstPtr &msg)
   omega_buff.erase(k2, omega_buff.end());
   orientation_buff.erase(k3, orientation_buff.end());
   time_stamp_buff.erase(k4, time_stamp_buff.end());
-  
+
   // Ignore raw from IMU
   double yaw, pitch, roll;
   tf::Matrix3x3 R_IMU(imu_q_);
   R_IMU.getEulerYPR(yaw, pitch, roll);
+  // #### Is this necessary
   R_IMU.setEulerYPR(0, pitch, roll);
 
   z_in_C = R_CtoB_.transpose() * R_IMU.transpose() * tf::Vector3(0, 0, 1);
@@ -282,7 +326,13 @@ static void cylinder_pose_cb(const cylinder_msgs::CylinderPose::ConstPtr &msg)
   Vector3d P1;
   P1 << msg->P1.x, msg->P1.y, msg->P1.z;
 
+  // The parallel plane message
+  cylinder_msgs::ParallelPlane pp_msg;
+
   Vector3d P1_inV = R_VtoC.transpose() * P1;
+  pp_msg.P1.x = P1_inV(0);
+  pp_msg.P1.y = P1_inV(1);
+  pp_msg.P1.z = P1_inV(2);
   // ROS_INFO_THROTTLE(1, "P1_inV: {%2.2f, %2.2f, %2.2f}", P1_inV(0), P1_inV(1), P1_inV(2));
 
   // Image feature vector in the virtual frame
@@ -290,7 +340,6 @@ static void cylinder_pose_cb(const cylinder_msgs::CylinderPose::ConstPtr &msg)
   Vector3d s_sign;
   pp_features(r, P0, P1_inV, s, s_sign);
 
-  cylinder_msgs::ParallelPlane pp_msg;
   pp_msg.s_meas[0] = s(0);
   pp_msg.s_meas[1] = s(1);
   pp_msg.s_meas[2] = s(2);
@@ -313,9 +362,6 @@ static void cylinder_pose_cb(const cylinder_msgs::CylinderPose::ConstPtr &msg)
 
   const KalmanFilter::State_t state = kf.getState();
   pp_msg.stamp = msg->stamp;
-  pp_msg.P1.x = P1_inV(0);
-  pp_msg.P1.y = P1_inV(1);
-  pp_msg.P1.z = P1_inV(2);
   // Switch the state vector back to their convention
   pp_msg.s[0]  = state(0) * s_sign(0);
   pp_msg.s[1]  = state(1) * s_sign(1);
@@ -398,10 +444,10 @@ void pp_features(const double &r, const Eigen::Vector3d &P0, const Eigen::Vector
 
     // Handle the case when theta1 or theta2 are less than zero (we want them to both be = M_PI / 2)
     s_sign << 1, 1, 1;
-   
+
     if (theta1 <= 0)
       s_sign(0) = -1;
-    
+
     if (theta2 <= 0)
     	s_sign(1) = -1;
 
@@ -424,6 +470,11 @@ int main(int argc, char **argv)
 
   // Parameters
   n.param("cylinder_radius", r, 0.1);
+  ROS_INFO("Process_image_features using cylinder_radius = %2.2f", r);
+
+  // For prefiltering the image measurements
+  n.param("alpha", filt_alpha, 1.0);
+  ROS_INFO("Filter using alpha = %2.2f", filt_alpha);
 
   // Kalman Filter initalized this way for vicon_odom
   double max_accel;
@@ -462,9 +513,9 @@ int main(int argc, char **argv)
   pub_pp_ = n.advertise<cylinder_msgs::ParallelPlane>("image_features_pp", 1);
 
   // Subscribers
-  ros::Subscriber image_features_sub = n.subscribe("/cylinder_detection/cylinder_features", 10, &image_features_cb, ros::TransportHints().tcpNoDelay());
-  ros::Subscriber sub_imu = n.subscribe("quad_decode_msg/imu", 10, &imu_cb, ros::TransportHints().tcpNoDelay());
-  ros::Subscriber cylinder_pose = n.subscribe("cylinder_pose", 10, &cylinder_pose_cb, ros::TransportHints().tcpNoDelay());
+  ros::Subscriber image_features_sub = n.subscribe("/cylinder_detection/cylinder_features", 1, &image_features_cb, ros::TransportHints().tcpNoDelay());
+  ros::Subscriber sub_imu = n.subscribe("quad_decode_msg/imu", 1, &imu_cb, ros::TransportHints().tcpNoDelay());
+  ros::Subscriber cylinder_pose = n.subscribe("cylinder_pose", 1, &cylinder_pose_cb, ros::TransportHints().tcpNoDelay());
 
   ros::spin();
   return 0;
