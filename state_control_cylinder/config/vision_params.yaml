@@ -6,7 +6,7 @@ sdes:
 vision_gains:
   kprho: 7.0 
   kpu: 0.0
-  kdrho: 1.0
+  kdrho: 1.5
   kdu: 0.0
 
 alpha: 1.0
