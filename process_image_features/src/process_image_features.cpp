@@ -57,7 +57,7 @@ static void image_features_cb(const cylinder_msgs::ImageFeatures::ConstPtr &msg)
   Vector4d im_feats(msg->theta1, msg->theta2, msg->rho1, msg->rho2);
   static Vector4d last_feature_vec = im_feats;
 
-  ROS_INFO(TEXT_RED "Features: {%2.2f, %2.2f, %2.2f, %2.2f}" TEXT_RESET, im_feats[0], im_feats[1], im_feats[2], im_feats[3]);
+  // ROS_INFO(TEXT_RED "Features: {%2.2f, %2.2f, %2.2f, %2.2f}" TEXT_RESET, im_feats[0], im_feats[1], im_feats[2], im_feats[3]);
 
   // Handle angle wrapping
   while (last_feature_vec[0] < im_feats[0] - M_PI/2)
@@ -87,7 +87,7 @@ static void image_features_cb(const cylinder_msgs::ImageFeatures::ConstPtr &msg)
   im_feats = filt_alpha * im_feats + (1-filt_alpha) * last_feature_vec;
   last_feature_vec = im_feats;
 
-  ROS_INFO(TEXT_GREEN "Filt Fet: {%2.2f, %2.2f, %2.2f, %2.2f}" TEXT_RESET, im_feats[0], im_feats[1], im_feats[2], im_feats[3]);
+  // ROS_INFO(TEXT_GREEN "Filt Fet: {%2.2f, %2.2f, %2.2f, %2.2f}" TEXT_RESET, im_feats[0], im_feats[1], im_feats[2], im_feats[3]);
 
   double ctheta1, ctheta2, stheta1, stheta2, rho1, rho2;
   ctheta1 = std::cos(im_feats[0]);
