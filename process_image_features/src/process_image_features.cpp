@@ -170,8 +170,14 @@ static void image_features_cb(const cylinder_msgs::ImageFeatures::ConstPtr &msg)
   a_last = a;
   */
 
-  tf::Vector3 b(msg->b.x, msg->b.y, msg->b.z);
-  double delta = tfDot(a, b) * tfDot(P0, b) / (1 - pow(tfDot(a, b), 2));
+  // Load the bearing measurements
+  tf::Vector3 b1(msg->b1.x, msg->b1.y, msg->b1.z);
+  tf::Vector3 b2(msg->b2.x, msg->b2.y, msg->b2.z);
+
+  double delta1 = tfDot(a, b1) * tfDot(P0, b1) / (1 - pow(tfDot(a, b1), 2));
+  double delta2 = tfDot(a, b2) * tfDot(P0, b2) / (1 - pow(tfDot(a, b2), 2));
+  double delta = (delta1 + delta2) / 2;
+  ROS_INFO("{delta1, delta2} = {%2.2f, %2.2f}", delta1, delta2);
   // ROS_INFO_THROTTLE(1, "delta from processor: %2.2f", delta);
   // ROS_INFO_THROTTLE(1, "\e[0;33mEst: a = {%2.2f, %2.2f, %2.2f}, delta: %2.2f, P0 = {%2.2f, %2.2f, %2.2f}\e[0m",
   //     a[0], a[1], a[2], delta, P0[0], P0[1], P0[2]);
