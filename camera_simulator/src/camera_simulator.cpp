@@ -149,6 +149,7 @@ static void odom_cb(const nav_msgs::Odometry::ConstPtr &msg)
   // double gamma = std::sqrt(tf::tfDot(P0, P0) - r*r); // Note: this is the same as A in Chaumette 1994
   Vector3d a = Vec3TfToEigen(a_Cam);
   // eq (15) to determine the direction of Pt0
+  // Note: if we want both solutions for b, we could use the other solution for A (i.e. use -A)
   Vector3d d = (A * hat(a) - r * Matrix3d::Identity()).inverse() * hat(a) * Vec3TfToEigen(P0);
   Vector3d Pt0 = A * d;  // eq (8)
   if (Pt0(2) < 0)
@@ -172,7 +173,8 @@ static void odom_cb(const nav_msgs::Odometry::ConstPtr &msg)
   f.theta1 = theta1;
   f.rho2 = rho2;
   f.theta2 = theta2;
-  f.b.x = b(0); f.b.y = b(1); f.b.z = b(2);
+  f.b1.x = b(0); f.b1.y = b(1); f.b1.z = b(2);
+  f.b2.x = b(0); f.b2.y = b(1); f.b2.z = b(2);
   pub_image_features_.publish(f);
 }
 
