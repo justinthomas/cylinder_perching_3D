@@ -811,9 +811,9 @@ int main(int argc, char **argv)
   ROS_INFO("Attitude gains: kR: {%2.2f, %2.2f, %2.2f}, kOm: {%2.2f, %2.2f, %2.2f}", kR_[0], kR_[1], kR_[2], kOm_[0], kOm_[1], kOm_[2]);
 
   // double corrections[3];
-  n.param("/corrections/kf", corrections_[0], 0.0);
-  n.param("/corrections/r", corrections_[1], 0.0);
-  n.param("/corrections/p", corrections_[2], 0.0);
+  n.param("corrections/kf", corrections_[0], 0.0);
+  n.param("corrections/r", corrections_[1], 0.0);
+  n.param("corrections/p", corrections_[2], 0.0);
   // corrections_[0] = corrections[0], corrections_[1] = corrections[1], corrections_[2] = corrections[2];
 
   // The desired feature vector for now

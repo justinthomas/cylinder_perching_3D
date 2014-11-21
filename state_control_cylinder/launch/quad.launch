@@ -12,7 +12,6 @@
     <param name="cylinder_radius" value="0.04" />
 
     <param name="mass" value="$(arg mass)" />
-    <rosparam file="$(find state_control_cylinder)/config/hummingbird_gains.yaml"/>
 
     <node pkg="nodelet"
       type="nodelet"
