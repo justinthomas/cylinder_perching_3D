@@ -13,11 +13,9 @@
 
     <param name="mass" value="$(arg mass)" />
 
-    <node pkg="nodelet"
-      type="nodelet"
-      name="standalone_nodelet"
-      args="manager"
-      output="screen"/>
+    <node pkg="nodelet" type="nodelet" name="standalone_nodelet" args="manager" output="screen">
+      <param name="num_worker_threads" type="int" value="4"/>
+    </node>
 
     <node pkg="nodelet"
       type="nodelet"
@@ -111,4 +109,6 @@
     </node>
 
   </group>
+
+
 </launch>

@@ -792,7 +792,7 @@ int main(int argc, char **argv)
   n.param("sdes/rho1", sdes[0], -0.1);
   n.param("sdes/rho2", sdes[1], 0.1);
   n.param("sdes/u", sdes[2], 0.4);  
-  ROS_INFO("sdes: {%2.2f, %2.2ff, %2.2f}", sdes[0], sdes[1], sdes[2]);
+  ROS_INFO("sdes: {%2.2f, %2.2f, %2.2f}", sdes[0], sdes[1], sdes[2]);
 
   /////////////////
   // Publishers //
