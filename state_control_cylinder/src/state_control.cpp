@@ -447,22 +447,6 @@ static void image_update_cb(const cylinder_msgs::ParallelPlane::ConstPtr &msg)
   // These will eventually be set by a trajectory
   Vector3d sdotdes(0,0,0), sddotdes(0,0,0), sdddotdes(0,0,0); // sdes(-0.2,0.2,0.437), 
 
-  // In the next block, we require sdes[0] < sdes[1]
-  if (sdes[0] > sdes[1])
-  {
-    double temp = sdes[0];
-    sdes[0] = sdes[1];
-    sdes[1] = temp;
-  }
-  // Make sure that the desired and actual are correlated
-  if (s[1] < s[0])
-  {
-    // ROS_INFO("Switching sdes[0] and sdes[1]");
-    double temp = sdes[0];
-    sdes[0] = sdes[1];
-    sdes[1] = temp;
-  }
-    
   // Useful defs
   double g = 9.81;
   static const Vector3d e3(0,0,1);
@@ -474,18 +458,6 @@ static void image_update_cb(const cylinder_msgs::ParallelPlane::ConstPtr &msg)
   ROS_INFO_THROTTLE(1, TEXT_MAGENTA "sdes = {%2.2f, %2.2f, %2.2f}" TEXT_RESET, sdes(0), sdes(1), sdes(2));
   ROS_INFO_THROTTLE(1, "\e[91me_pos: {%2.2f, %2.2f, %2.2f}\e[0m", e_pos(0), e_pos(1), e_pos(2));
   // ROS_INFO_THROTTLE(1, "\e[93me_vel: {%2.2f, %2.2f, %2.2f}\e[0m", e_vel(0), e_vel(1), e_vel(2));
-
-  /*
-  for (int i=0; i<=1; i++)
-  {
-    if (s(i) < 0)
-    {
-      ROS_INFO("Switched index %d", i);
-      e_pos(i) = -e_pos(i);
-      e_vel(i) = -e_vel(i);
-    }
-  }
-  */
 
   // Gains
   Vector3d kx, kv;
