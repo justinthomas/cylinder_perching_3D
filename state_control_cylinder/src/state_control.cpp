@@ -809,10 +809,10 @@ int main(int argc, char **argv)
   so3_command_pub_ = n.advertise<quadrotor_msgs::SO3Command>("so3_cmd", 10);
 
   // Subscribers
-  ros::Subscriber sub_odom = n.subscribe("odom", 10, &odom_cb, ros::TransportHints().tcpNoDelay());
-  ros::Subscriber sub_imu = n.subscribe("imu", 10, &imu_cb, ros::TransportHints().tcpNoDelay());
-  ros::Subscriber sub_nanokontrol = n.subscribe("/nanokontrol2", 10, nanokontrol_cb, ros::TransportHints().tcpNoDelay());
-  ros::Subscriber sub_vision = n.subscribe("image_features_pp", 10, &image_update_cb, ros::TransportHints().tcpNoDelay());
+  ros::Subscriber sub_odom = n.subscribe("odom", 1, &odom_cb, ros::TransportHints().tcpNoDelay());
+  ros::Subscriber sub_imu = n.subscribe("imu", 1, &imu_cb, ros::TransportHints().tcpNoDelay());
+  ros::Subscriber sub_nanokontrol = n.subscribe("/nanokontrol2", 1, nanokontrol_cb, ros::TransportHints().tcpNoDelay());
+  ros::Subscriber sub_vision = n.subscribe("image_features_pp", 1, &image_update_cb, ros::TransportHints().tcpNoDelay());
 
   // Spin
   ros::spin();

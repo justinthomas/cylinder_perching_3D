@@ -11,12 +11,12 @@ vision_gains:
 
 alpha: 1.0
 
-camera_fps: 78
+camera_fps: 75
 
 # Acceleration for the kalman filter
 max_accel: 0.5
 measurement_noise_rhos: 0.0015
 #measurement_noise_rhos: 0.0023
 #measurement_noise_rhos: 0.0046
-measurement_noise_u: 0.005
+measurement_noise_u: 0.007
 #measurement_noise_u: 0.05
