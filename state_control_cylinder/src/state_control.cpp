@@ -136,7 +136,7 @@ static void nanokontrol_cb(const sensor_msgs::Joy::ConstPtr &msg)
 
   if(state_ == INIT)
   {
-    if (!have_odom_ && need_odom_)
+    if (need_odom_ && !have_odom_)
     {
       ROS_INFO("Waiting for Odometry!");
       return;
@@ -274,7 +274,7 @@ static void nanokontrol_cb(const sensor_msgs::Joy::ConstPtr &msg)
     else if(msg->buttons[play_button] && state_ == PREP_TRAJ)
     {
       // If we are ready to start the trajectory
-      if (sqrt( pow(vel_.x,2) + pow(vel_.y,2) + pow(vel_.z,2) ) < 0.05)
+      if (!need_odom_ || sqrt( pow(vel_.x,2) + pow(vel_.y,2) + pow(vel_.z,2) ) < 0.05)
       {
         ROS_INFO("Starting Trajectory");
 
