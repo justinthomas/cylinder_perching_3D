@@ -20,13 +20,13 @@ using namespace std;
 using namespace tf;
 using namespace Eigen;
 
-#define TEXT_RED "\e[91m"
-#define TEXT_GREEN "\e[92m"
-#define TEXT_YELLOW "\e[93m"
-#define TEXT_BLUE "\e[94m"
-#define TEXT_MAGENTA "\e[95m"
-#define TEXT_CYAN "\e[96m"
-#define TEXT_RESET "\e[0m"
+#define RED "\e[91m"
+#define GREEN "\e[92m"
+#define YELLOW "\e[93m"
+#define BLUE "\e[94m"
+#define MAGENTA "\e[95m"
+#define CYAN "\e[96m"
+#define RESET "\e[0m"
 #define NUM_INF 999999.9
 
 static ros::Publisher pub_features_, pub_pp_;
@@ -57,7 +57,7 @@ static void image_features_cb(const cylinder_msgs::ImageFeatures::ConstPtr &msg)
   Vector4d im_feats(msg->theta1, msg->theta2, msg->rho1, msg->rho2);
   static Vector4d last_feature_vec = im_feats;
 
-  // ROS_INFO(TEXT_RED "Features: {%2.2f, %2.2f, %2.2f, %2.2f}" TEXT_RESET, im_feats[0], im_feats[1], im_feats[2], im_feats[3]);
+  // ROS_INFO(RED "Features: {%2.2f, %2.2f, %2.2f, %2.2f}" RESET, im_feats[0], im_feats[1], im_feats[2], im_feats[3]);
 
   // Handle angle wrapping
   while (last_feature_vec[0] < im_feats[0] - M_PI/2)
@@ -87,7 +87,7 @@ static void image_features_cb(const cylinder_msgs::ImageFeatures::ConstPtr &msg)
   im_feats = filt_alpha * im_feats + (1-filt_alpha) * last_feature_vec;
   last_feature_vec = im_feats;
 
-  // ROS_INFO(TEXT_GREEN "Filt Fet: {%2.2f, %2.2f, %2.2f, %2.2f}" TEXT_RESET, im_feats[0], im_feats[1], im_feats[2], im_feats[3]);
+  // ROS_INFO(GREEN "Filt Fet: {%2.2f, %2.2f, %2.2f, %2.2f}" RESET, im_feats[0], im_feats[1], im_feats[2], im_feats[3]);
 
   double ctheta1, ctheta2, stheta1, stheta2, rho1, rho2;
   ctheta1 = std::cos(im_feats[0]);
@@ -155,7 +155,7 @@ static void image_features_cb(const cylinder_msgs::ImageFeatures::ConstPtr &msg)
   // #### Not a good test
   if (a[1] < 0)
   {
-    // ROS_INFO(TEXT_MAGENTA "Axis switched" TEXT_RESET);
+    // ROS_INFO(MAGENTA "Axis switched" RESET);
     a = -1.0 * a;
   }
 
@@ -164,7 +164,7 @@ static void image_features_cb(const cylinder_msgs::ImageFeatures::ConstPtr &msg)
   static tf::Vector3 a_last = a;
   if (tf::tfDot(a, a_last) < 0)
   {
-    ROS_INFO(TEXT_MAGENTA "Axis switched" TEXT_RESET);
+    ROS_INFO(MAGENTA "Axis switched" RESET);
     a = -1.0 * a;
   }
   a_last = a;

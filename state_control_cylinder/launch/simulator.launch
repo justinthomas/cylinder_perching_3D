@@ -1,17 +1,21 @@
 <launch>
 
   <arg name="model" default="quadrotor" />
+  <arg name="mass" default="0.73"/>
+  <arg name="cylinder_radius" default="0.04" /> 
 
   <group ns="$(arg model)">
     
-    <arg name="mass" default="0.73"/>
-    <arg name="cylinder_radius" default="0.1" /> 
+    <param name="cylinder_radius" value="$(arg cylinder_radius)"/>
     
     <node pkg="quadrotor_simulator"
       type="quadrotor_simulator_so3"
       name="$(arg model)_simulator_so3"
       output="screen">
       <param name="rate/odom" value="100.0"/>
+      <param name="rate/simulation" value="10000"/>
+      <param name="motor_time_constant" value="0.0"/>
+      <param name="mass" value="$(arg mass)"/>
       <remap from="~odom" to="odom"/>
       <remap from="~imu" to="quad_decode_msg/imu"/>
       <remap from="~cmd" to="so3_cmd"/>
@@ -67,6 +71,7 @@
 	    type="state_control"
 	    name="state_control"
       output="screen">
+      <param name="mass" value="$(arg mass)" />
       <rosparam file="$(find state_control_cylinder)/config/vision_params.yaml" />
       <rosparam file="$(find state_control_cylinder)/config/$(arg model)_params.yaml" />
       <rosparam file="$(find state_control_cylinder)/config/hummingbird_gains.yaml" />
@@ -86,6 +91,9 @@
       <remap from="~odom" to="odom"/>
       <remap from="~image_features_pp" to="image_features_pp"/>
 
+      <!-- Service Remappings -->
+      <remap from="~controllers_manager/transition" to="controllers_manager/transition"/>
+
       <!-- remap from="so3_cmd" to="so3_cmd_vision"/ -->
     </node>
 
@@ -93,7 +101,6 @@
       type="camera_simulator"
       name="camera_simulator"
       output="screen">
-      <param name="cylinder_radius" value="$(arg cylinder_radius)"/>
     </node>
 
     <node pkg="process_image_features"

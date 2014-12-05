@@ -14,6 +14,7 @@
       <rosparam file="$(find state_control_cylinder)/config/hummingbird_gains.yaml" />
       <param name="safety_catch" value="false"/>
       <param name="traj_filename" type="string" value="/home/justin/Dropbox/papers_and_posters/2015-ICRA_Gecko_Perching/current_experiment/traj.csv"/>
+      <remap from="so3_cmd" to="so3_cmd_vision"/>
     </node>
 
     <node pkg="camera_simulator"
