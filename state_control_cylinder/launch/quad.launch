@@ -5,12 +5,11 @@
   </include>
 
   <arg name="model" default="QuadrotorAlpha" />
+  <arg name="mass" default="0.73"/>
 
   <group ns="$(arg model)">
 
-    <arg name="mass" default="0.73"/>
     <param name="cylinder_radius" value="0.04" />
-
     <param name="mass" value="$(arg mass)" />
 
     <node pkg="nodelet" type="nodelet" name="standalone_nodelet" args="manager" output="screen">
@@ -98,6 +97,9 @@
       <remap from="~imu" to="quad_decode_msg/imu"/>
       <remap from="~odom" to="odom"/>
       <remap from="~image_features_pp" to="image_features_pp"/>
+
+      <!-- Service Remappings -->
+      <remap from="~controllers_manager/transition" to="controllers_manager/transition"/>
 
       <!-- remap from="so3_cmd" to="so3_cmd_vision"/ -->
     </node>

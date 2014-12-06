@@ -55,6 +55,7 @@ enum controller_state
   TRAJ,
   VISION_TRAJ,
   NONE,
+  ESTOP,
 };
 // States
 static enum controller_state state_ = INIT;
@@ -88,7 +89,7 @@ static ros::Publisher so3_command_pub_;
 
 // Vision Stuff
 // static tf::Transform T_Cam_to_Body_ = tf::Transform(tf::Matrix3x3(1,0,0, 0,-1,0, 0,0,-1), tf::Vector3(0,0,0));
-static void Jacobians(const Vector3d &P1_inV, const Vector3d &sdot, Matrix3d &Jinv, Matrix3d &Jdot, Matrix3d &R_VtoW);
+static void Jacobians(const Vector3d &P1_inV, const Vector3d &sdot, const Matrix3d &R_VtoW, Matrix3d &Jinv, Matrix3d &Jdot);
 double r;
 double kR_[3], kOm_[3], corrections_[3];
 bool enable_motors_, use_external_yaw_;
@@ -109,7 +110,7 @@ static const std::string line_tracker_yaw("line_tracker/LineTrackerYaw");
 static const std::string velocity_tracker_str("velocity_tracker/VelocityTrackerYaw");
 static const std::string null_tracker_str("null_tracker/NullTracker");
 
-// Function Prototypes 
+// Function Prototypes
 void hover_in_place();
 void hover_at(const geometry_msgs::Point goal);
 void go_home();
@@ -119,9 +120,10 @@ void go_to(const quadrotor_msgs::FlatOutputs goal);
 // Callbacks and functions
 static void nanokontrol_cb(const sensor_msgs::Joy::ConstPtr &msg)
 {
-
   if(msg->buttons[estop_button])
   {
+    state_ = ESTOP;
+
     // Publish the E-Stop command
     ROS_WARN("E-STOP");
     std_msgs::Empty estop_cmd;
@@ -132,6 +134,27 @@ static void nanokontrol_cb(const sensor_msgs::Joy::ConstPtr &msg)
     std_msgs::Bool motors_cmd;
     motors_cmd.data = false;
     pub_motors_.publish(motors_cmd);
+
+    // Switch to null_tracker so that the trackers do not publish so3_commands
+    controllers_manager::Transition transition_cmd;
+    transition_cmd.request.controller = null_tracker_str;
+    srv_transition_.call(transition_cmd);
+
+    // Create and publish the so3_command
+    quadrotor_msgs::SO3Command::Ptr cmd(new quadrotor_msgs::SO3Command);
+    // cmd->header.stamp = ros::Time::now();
+    cmd->aux.enable_motors = false;
+    so3_command_pub_.publish(cmd);
+  }
+
+  if (state_ == ESTOP)
+    return;
+
+  if(msg->buttons[7])
+  {
+    state_ = RECOVERY;
+    recovery();
+    return;
   }
 
   if(state_ == INIT)
@@ -254,8 +277,8 @@ static void nanokontrol_cb(const sensor_msgs::Joy::ConstPtr &msg)
       int flag = loadTraj(traj_filename.c_str(), traj);
       if (flag != 0)
       {
-        hover_in_place();
         ROS_WARN("Couldn't load %s.  Error: %d.  Hovering in place...", traj_filename.c_str(), flag);
+        recovery();
       }
       else
       {
@@ -265,7 +288,7 @@ static void nanokontrol_cb(const sensor_msgs::Joy::ConstPtr &msg)
         // Updates traj goal to allow for correct initalization of the trajectory
         traj_start_time = ros::Time::now();
         updateTrajGoal();
-      
+
         controllers_manager::Transition transition_cmd;
         transition_cmd.request.controller = null_tracker_str;
         srv_transition_.call(transition_cmd);
@@ -297,16 +320,16 @@ static void nanokontrol_cb(const sensor_msgs::Joy::ConstPtr &msg)
         ROS_WARN("Not ready to start trajectory.");
       }
     }
-    // Vision Control
-    else if(selected && msg->buttons[vision_control_button] && state_ == HOVER && vision_info_ && imu_info_)
-    {
-      ROS_INFO("Activating Vision Control.  state_ == VISION_CONTROL;");
-
-      controllers_manager::Transition transition_cmd;
-      transition_cmd.request.controller = null_tracker_str;
-      srv_transition_.call(transition_cmd);
-      state_ = VISION_CONTROL;
-    }
+//    // Vision Control
+//    else if(selected && msg->buttons[vision_control_button] && state_ == HOVER && vision_info_ && imu_info_)
+//    {
+//      ROS_INFO("Activating Vision Control.  state_ == VISION_CONTROL;");
+//
+//      controllers_manager::Transition transition_cmd;
+//      transition_cmd.request.controller = null_tracker_str;
+//      srv_transition_.call(transition_cmd);
+//      state_ = VISION_CONTROL;
+//    }
   }
 }
 
@@ -328,7 +351,7 @@ void updateTrajGoal()
 
     i = traj.size() - 1;
   }
-    
+
   // Note: offsets have been removed for vision control
   traj_goal_.position.x = traj[i][0][0];
   traj_goal_.position.y = traj[i][1][0];
@@ -384,17 +407,15 @@ static void imu_cb(const sensor_msgs::Imu::ConstPtr &msg)
     double roll, pitch, yaw;
     tf::Matrix3x3 R;
 
-    // This block gets the orientation estimate from the IMU and determines a geodesic angle from hover at the same yaw
+    // Determine a geodesic angle from hover at the same yaw
     tf::Matrix3x3(imu_q_).getEulerYPR(yaw, pitch, roll);
     R.setEulerYPR(0, pitch, roll);
-    R.getRotation(q);
-    q.normalize();
-    double geodesic = q.getAngleShortestPath();
+    double geodesic = std::fabs( std::acos(0.5 * (R[0][0] + R[1][1] + R[2][2] - 1)));
 
-    if (std::fabs(geodesic) > attitude_safety_limit_)
+    if (geodesic > attitude_safety_limit_)
     {
       safety_catch_active = true;
-      ROS_WARN("Robot attitude has exceeded %2.0f degrees. Activating recovery...", attitude_safety_limit_ * 180 / M_PI);
+      ROS_WARN("Robot attitude is %2.1f and has exceeded %2.1f degrees. Activating recovery...", geodesic*180/M_PI, attitude_safety_limit_*180/M_PI);
       recovery();
     }
   }
@@ -420,7 +441,7 @@ static void image_update_cb(const cylinder_msgs::ParallelPlane::ConstPtr &msg)
   Vector3d sdot(msg->sdot[0], msg->sdot[1], msg->sdot[2]);
 
   Matrix3d Jinv, Jdot;
-  Jacobians(P1, sdot, Jinv, Jdot, R_VtoW);
+  Jacobians(P1, sdot, R_VtoW, Jinv, Jdot);
 
   // Matrix3d T = R_VtoW * Jinv;
   // cout << CYAN << "Jinv = " << endl << Jinv << RESET << endl; // cout << BLUE << "T = " << endl << T << RESET << endl;
@@ -442,8 +463,8 @@ static void image_update_cb(const cylinder_msgs::ParallelPlane::ConstPtr &msg)
   // Errors
   Vector3d e_pos(sdes - s), e_vel(sdotdes - sdot);
 
-  // ROS_INFO_THROTTLE(1, MAGENTA "s    = {%2.2f, %2.2f, %2.2f}" RESET, s(0), s(1), s(2));
-  // ROS_INFO_THROTTLE(1, MAGENTA "sdes = {%2.2f, %2.2f, %2.2f}" RESET, sdes(0), sdes(1), sdes(2));
+  ROS_INFO_THROTTLE(1, MAGENTA "s    = {%2.2f, %2.2f, %2.2f}" RESET, s(0), s(1), s(2));
+  ROS_INFO_THROTTLE(1, MAGENTA "sdes = {%2.2f, %2.2f, %2.2f}" RESET, sdes(0), sdes(1), sdes(2));
   // ROS_INFO_THROTTLE(1, "\e[91me_pos: {%2.2f, %2.2f, %2.2f}\e[0m", e_pos(0), e_pos(1), e_pos(2));
   // ROS_INFO_THROTTLE(1, "\e[93me_vel: {%2.2f, %2.2f, %2.2f}\e[0m", e_vel(0), e_vel(1), e_vel(2));
 
@@ -555,7 +576,7 @@ static void image_update_cb(const cylinder_msgs::ParallelPlane::ConstPtr &msg)
   }
 }
 
-void Jacobians(const Vector3d &P1_inV, const Vector3d &sdot, Matrix3d &Jinv, Matrix3d &Jdot, Matrix3d &R_VtoW)
+void Jacobians(const Vector3d &P1_inV, const Vector3d &sdot, const Matrix3d &R_VtoW, Matrix3d &Jinv, Matrix3d &Jdot)
 {
   // These values are correct in the virtual frame
   // ROS_INFO_THROTTLE(1, "\e[94mUsing {x1, y1, z1, r} = {%2.2f, %2.2f, %2.2f, %2.2f} in V\e[0m", P1_inV(0), P1_inV(1), P1_inV(2), r);
@@ -638,26 +659,17 @@ void hover_in_place()
 void recovery()
 {
   state_ = RECOVERY;
-  ROS_WARN("Recovery...");
 
   if (have_odom_)
     hover_in_place();
   else
   {
+    ROS_WARN("Recovery without odometry...");
+
     // Switch to null_tracker so that the trackers do not publish so3_commands
     controllers_manager::Transition transition_cmd;
     transition_cmd.request.controller = null_tracker_str;
     srv_transition_.call(transition_cmd);
-
-    // Determine the desired orientation
-    // This block gets the orientation estimate and sets a zero roll and pitch
-    tf::Quaternion q;
-    double roll, pitch, yaw;
-    tf::Matrix3x3 R;
-    tf::Matrix3x3(imu_q_).getEulerYPR(yaw, pitch, roll);
-    R.setEulerYPR(yaw, 0, 0);
-    R.getRotation(q);
-    q.normalize();
 
     // Create and publish the so3_command
     quadrotor_msgs::SO3Command::Ptr cmd(new quadrotor_msgs::SO3Command);
@@ -667,10 +679,10 @@ void recovery()
     cmd->force.y = 0;
     cmd->force.z = 0.9 * mass_ * gravity_;
 
-    cmd->orientation.x = q.x();
-    cmd->orientation.y = q.y();
-    cmd->orientation.z = q.z();
-    cmd->orientation.w = q.w();
+    cmd->orientation.x = 0;
+    cmd->orientation.y = 0;
+    cmd->orientation.z = 0;
+    cmd->orientation.w = 1;
     cmd->angular_velocity.x = 0;
     cmd->angular_velocity.y = 0;
     cmd->angular_velocity.z = 0;
@@ -744,10 +756,12 @@ int main(int argc, char **argv)
 
   // Safety
   n.param("need_odom", need_odom_, true);
+  if (!need_odom_)
+    ROS_WARN("Not using odometry...");
+
   n.param("safety_catch", safety_, true);
   if (!safety_)
     ROS_WARN("Safety catch is off!");
-
 
   // Properties
   n.param("gravity", gravity_, 9.81);
@@ -808,6 +822,22 @@ int main(int argc, char **argv)
   ros::Subscriber sub_imu = n.subscribe("imu", 1, &imu_cb, ros::TransportHints().tcpNoDelay());
   ros::Subscriber sub_nanokontrol = n.subscribe("/nanokontrol2", 1, nanokontrol_cb, ros::TransportHints().tcpNoDelay());
   ros::Subscriber sub_vision = n.subscribe("image_features_pp", 1, &image_update_cb, ros::TransportHints().tcpNoDelay());
+
+  // Disable motors
+  ROS_WARN("Disarming motors...");
+  std_msgs::Bool motors_cmd;
+  motors_cmd.data = false;
+  pub_motors_.publish(motors_cmd);
+
+  // Switch to null_tracker so that the trackers do not publish so3_commands
+  controllers_manager::Transition transition_cmd;
+  transition_cmd.request.controller = null_tracker_str;
+  srv_transition_.call(transition_cmd);
+
+  // Create and publish the so3_command
+  quadrotor_msgs::SO3Command::Ptr cmd(new quadrotor_msgs::SO3Command);
+  cmd->aux.enable_motors = false;
+  so3_command_pub_.publish(cmd);
 
   // Spin
   ros::spin();
