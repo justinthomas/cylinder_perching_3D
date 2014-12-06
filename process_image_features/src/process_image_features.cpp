@@ -40,7 +40,6 @@ static double filt_alpha;
 
 // Static transformations
 static const tf::Matrix3x3 R_CtoB_ = tf::Matrix3x3(sqrt(2)/2,sqrt(2)/2,0, sqrt(2)/2,-sqrt(2)/2,0, 0,0,-1);
-// static const tf::Matrix3x3 R_CtoB_ = tf::Matrix3x3(1,0,0, 0,-1,0, 0,0,-1);
 static const tf::Transform T_CtoB_ = tf::Transform(R_CtoB_, tf::Vector3(0,0,0));
 
 //IMU buffer

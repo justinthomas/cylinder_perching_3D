@@ -457,6 +457,9 @@ static void image_update_cb(const cylinder_msgs::ParallelPlane::ConstPtr &msg)
            sddotdes(traj_goal_.acceleration.x, traj_goal_.acceleration.y, traj_goal_.acceleration.z),
            sdddotdes(traj_goal_.jerk.x, traj_goal_.jerk.y, traj_goal_.jerk.z); // sdes(-0.2,0.2,0.437),
 
+  yaw_des_ = traj_goal_.yaw;
+  yaw_des_dot_ = traj_goal_.yaw_dot;
+
   // Useful defs
   static const Vector3d e3(0,0,1);
 
@@ -513,7 +516,6 @@ static void image_update_cb(const cylinder_msgs::ParallelPlane::ConstPtr &msg)
   // Vector3d force2 = mass_ * Jinv * kv.asDiagonal() * e_vel + mass_ * Jinvdot * sdot;
   // ROS_INFO_THROTTLE(1, RED "Velocity component of force: {%2.2f, %2.2f, %2.2f}" RESET, force2(0), force2(1), force2(2));
 
-  yaw_des_ = yaw_des_ + yaw_off;
   Eigen::Vector3d b1c, b2c, b3c;
   Eigen::Vector3d b1d(cos(yaw_des_), sin(yaw_des_), 0);
 
