@@ -40,7 +40,7 @@ static double filt_alpha;
 
 // Static transformations
 static const tf::Matrix3x3 R_CtoB_ = tf::Matrix3x3(sqrt(2)/2,sqrt(2)/2,0, sqrt(2)/2,-sqrt(2)/2,0, 0,0,-1);
-static const tf::Transform T_CtoB_ = tf::Transform(R_CtoB_, tf::Vector3(0,0,0));
+static const tf::Transform T_CtoB_ = tf::Transform(R_CtoB_, tf::Vector3(-0.05, 0.05, 0));
 
 //IMU buffer
 //The delay need to be compensated
@@ -289,7 +289,7 @@ static void cylinder_pose_cb(const cylinder_msgs::CylinderPose::ConstPtr &msg)
   orientation_buff.erase(k3, orientation_buff.end());
   time_stamp_buff.erase(k4, time_stamp_buff.end());
 
-  // Ignore raw from IMU
+  // Ignore yaw from IMU
   double yaw, pitch, roll;
   tf::Matrix3x3 R_IMU(imu_q_);
   R_IMU.getEulerYPR(yaw, pitch, roll);

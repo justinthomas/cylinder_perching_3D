@@ -825,12 +825,6 @@ int main(int argc, char **argv)
   ros::Subscriber sub_nanokontrol = n.subscribe("/nanokontrol2", 1, nanokontrol_cb, ros::TransportHints().tcpNoDelay());
   ros::Subscriber sub_vision = n.subscribe("image_features_pp", 1, &image_update_cb, ros::TransportHints().tcpNoDelay());
 
-  // Disable motors
-  ROS_WARN("Disarming motors...");
-  std_msgs::Bool motors_cmd;
-  motors_cmd.data = false;
-  pub_motors_.publish(motors_cmd);
-
   // Switch to null_tracker so that the trackers do not publish so3_commands
   controllers_manager::Transition transition_cmd;
   transition_cmd.request.controller = null_tracker_str;
