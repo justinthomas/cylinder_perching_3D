@@ -95,6 +95,8 @@ double kR_[3], kOm_[3], corrections_[3];
 bool enable_motors_, use_external_yaw_;
 double kprho, kpu, kdrho, kdu;
 double yaw_des_(0), yaw_des_dot_(0);
+ros::Time last_image_update_ = ros::Time::now();
+int camera_rate;
 
 // Quadrotor Pose
 static geometry_msgs::Point pos_;
@@ -419,10 +421,20 @@ static void imu_cb(const sensor_msgs::Imu::ConstPtr &msg)
       recovery();
     }
   }
+
+  // Image_update safety catch
+  double frames_missed_limit = 3.0;
+  if ((state_ == PREP_TRAJ || state_ == TRAJ || state_ == VISION_CONTROL)
+      && (ros::Time::now() - last_image_update_).toSec() > frames_missed_limit * 1/camera_rate)
+  {
+    ROS_WARN("%2.0f image updates missed. Assuming tracking has been lost and activating recovery...", frames_missed_limit);
+    recovery();
+  }
 }
 
 static void image_update_cb(const cylinder_msgs::ParallelPlane::ConstPtr &msg)
 {
+  last_image_update_ = ros::Time::now();
   vision_info_ = true;
 
   // Extract stuff from the message
@@ -660,6 +672,10 @@ void hover_in_place()
 
 void recovery()
 {
+  // We do not want to re-enable the motors if the ESTOP has been triggered
+  if (state_ == ESTOP)
+    return;
+
   state_ = RECOVERY;
 
   if (have_odom_)
@@ -800,6 +816,7 @@ int main(int argc, char **argv)
   n.param("vision_gains/kdrho", kdrho, 0.0);
   n.param("vision_gains/kpu", kpu, 0.0);
   n.param("vision_gains/kdu", kdu, 0.0);
+  n.param("camera_fps", camera_rate, 50);
   ROS_INFO("Vision using gains: {kprho: %2.2f, kpu: %2.2f, kdrho: %2.2f, kdu: %2.2f}", kprho, kpu, kdrho, kdu);
 
   n.param("traj_filename", traj_filename, string("traj.csv"));
