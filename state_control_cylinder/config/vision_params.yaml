@@ -18,4 +18,4 @@ measurement_noise_u: 0.004
 
 traj_filename: "/home/xua/git/cylinder_perching_3D/trajectories/traj_vertical.csv"
 
-need_odom: false
+need_odom: true

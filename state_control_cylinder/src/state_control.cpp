@@ -95,7 +95,7 @@ double kR_[3], kOm_[3], corrections_[3];
 bool enable_motors_, use_external_yaw_;
 double kprho, kpu, kdrho, kdu;
 double yaw_des_(0), yaw_des_dot_(0);
-ros::Time last_image_update_ = ros::Time::now();
+ros::Time last_image_update_;
 int camera_rate;
 
 // Quadrotor Pose
@@ -104,6 +104,7 @@ static geometry_msgs::Vector3 vel_;
 static geometry_msgs::Quaternion ori_;
 static tf::Quaternion imu_q_, odom_q_;
 static bool have_odom_(false), imu_info_ (false), vision_info_(false), need_odom_(true);
+ros::Time last_odom_time_;
 
 // Strings
 static const std::string line_tracker_distance("line_tracker/LineTrackerDistance");
@@ -423,18 +424,23 @@ static void imu_cb(const sensor_msgs::Imu::ConstPtr &msg)
   }
 
   // Image_update safety catch
-  double frames_missed_limit = 3.0;
+  double frames_missed_limit = 10.0;
   if ((state_ == PREP_TRAJ || state_ == TRAJ || state_ == VISION_CONTROL)
-      && (ros::Time::now() - last_image_update_).toSec() > frames_missed_limit * 1/camera_rate)
+      && (ros::Time::now() - last_image_update_).toSec() > frames_missed_limit * 1 / (double)camera_rate)
   {
     ROS_WARN("%2.0f image updates missed. Assuming tracking has been lost and activating recovery...", frames_missed_limit);
+    recovery();
+  }
+
+  if (state_ != INIT && need_odom_ && (ros::Time::now() - last_odom_time_).toSec() > 0.2)
+  {
+    ROS_WARN("Odometry seems to have dropped. Attempting to recover...");
     recovery();
   }
 }
 
 static void image_update_cb(const cylinder_msgs::ParallelPlane::ConstPtr &msg)
 {
-  last_image_update_ = ros::Time::now();
   vision_info_ = true;
 
   // Extract stuff from the message
@@ -588,6 +594,8 @@ static void image_update_cb(const cylinder_msgs::ParallelPlane::ConstPtr &msg)
     so3_command_pub_.publish(cmd);
     ROS_INFO_THROTTLE(1, "Vision control");
   }
+
+  last_image_update_ = ros::Time::now();
 }
 
 void Jacobians(const Vector3d &P1_inV, const Vector3d &sdot, const Matrix3d &R_VtoW, Matrix3d &Jinv, Matrix3d &Jdot)
@@ -678,7 +686,7 @@ void recovery()
 
   state_ = RECOVERY;
 
-  if (have_odom_)
+  if (have_odom_ && (ros::Time::now() - last_odom_time_).toSec() < 0.1)
     hover_in_place();
   else
   {
@@ -741,6 +749,7 @@ void go_to(const quadrotor_msgs::FlatOutputs goal)
 
 static void odom_cb(const nav_msgs::Odometry::ConstPtr &msg)
 {
+  last_odom_time_ = ros::Time::now();
   have_odom_ = true;
 
   pos_ = msg->pose.pose.position;
@@ -821,6 +830,10 @@ int main(int argc, char **argv)
 
   n.param("traj_filename", traj_filename, string("traj.csv"));
   ROS_INFO(YELLOW "Using traj_filename: \"%s\"" RESET, traj_filename.c_str());
+
+  // Timing stuff
+  last_image_update_ = ros::Time::now();
+  last_odom_time_ = ros::Time::now();
 
   /////////////////
   // Publishers //
