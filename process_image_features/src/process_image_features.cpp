@@ -35,7 +35,8 @@ static tf::Quaternion imu_q_;
 static bool imu_info_(false);
 static KalmanFilter kf;
 static void pp_features(const double &r, const Eigen::Vector3d &P1_inV, const Eigen::Vector3d &P0, Eigen::Vector3d &s, Eigen::Vector3d &s_sign);
-static Eigen::Matrix3d tfRtoEigen(tf::Matrix3x3 tfR);
+static Eigen::Matrix3d tf2Eigen(tf::Matrix3x3 tfR);
+static Eigen::Vector3d tf2Eigen(tf::Vector3 tfvec);
 static double filt_alpha;
 
 // Static transformations
@@ -315,35 +316,35 @@ static void cylinder_pose_cb(const cylinder_msgs::CylinderPose::ConstPtr &msg)
 
   // Determine the Rotation from the virtual camera to the real camera frame
   tf::Vector3 z_pp_in_C = tfCross(a_in_C, -y_in_C);
-  Eigen::Matrix3d R_VtoC;
-  R_VtoC <<
+  tf::Matrix3x3 R_VtoC(
       a_in_C[0], -y_in_C[0], z_pp_in_C[0],
       a_in_C[1], -y_in_C[1], z_pp_in_C[1],
-      a_in_C[2], -y_in_C[2], z_pp_in_C[2];
-  // cout << "R_VtoC" << endl << R_VtoC << endl;
+      a_in_C[2], -y_in_C[2], z_pp_in_C[2]);
 
   // The rotation from the virtual frame to the world
-  Matrix3d R_VtoW = R_WtoC.transpose() * R_VtoC;
+  Eigen::Matrix3d R_VtoW = R_WtoC.transpose() * tf2Eigen(R_VtoC);
 
-  Vector3d P0;
-  P0 << msg->P0.x, msg->P0.y, msg->P0.z;
+  tf::Transform T_VtoC(R_VtoC, tf::Vector3(-0.05, 0.05, 0));
+  tf::Transform T_CtoV = T_VtoC.inverse();
 
-  Vector3d P1;
-  P1 << msg->P1.x, msg->P1.y, msg->P1.z;
+  tf::Vector3 P0_inV(msg->P0.x, msg->P0.y, msg->P0.z);
+  P0_inV = T_CtoV * P0_inV;
+
+  tf::Vector3 P1_inV(msg->P1.x, msg->P1.y, msg->P1.z);
+  P1_inV = T_CtoV * P1_inV;
 
   // The parallel plane message
   cylinder_msgs::ParallelPlane pp_msg;
-
-  Vector3d P1_inV = R_VtoC.transpose() * P1;
-  pp_msg.P1.x = P1_inV(0);
-  pp_msg.P1.y = P1_inV(1);
-  pp_msg.P1.z = P1_inV(2);
+  pp_msg.P1.x = P1_inV[0];
+  pp_msg.P1.y = P1_inV[1];
+  pp_msg.P1.z = P1_inV[2];
   // ROS_INFO_THROTTLE(1, "P1_inV: {%2.2f, %2.2f, %2.2f}", P1_inV(0), P1_inV(1), P1_inV(2));
 
   // Image feature vector in the virtual frame
-  Vector3d s;
-  Vector3d s_sign;
-  pp_features(r, P0, P1_inV, s, s_sign);
+  Vector3d P0_inV_Eigen, P1_inV_Eigen, s, s_sign;
+  P0_inV_Eigen = tf2Eigen(P0_inV);
+  P1_inV_Eigen = tf2Eigen(P1_inV);
+  pp_features(r, P0_inV_Eigen, P1_inV_Eigen, s, s_sign);
 
   pp_msg.s_meas[0] = s(0);
   pp_msg.s_meas[1] = s(1);
@@ -392,7 +393,7 @@ static void cylinder_pose_cb(const cylinder_msgs::CylinderPose::ConstPtr &msg)
   pp_msg.qCtoW.z = qCtoW.z();
   pp_msg.qCtoW.w = qCtoW.w();
 
-  Eigen::Quaterniond qBtoW(R_WtoC.transpose() * tfRtoEigen(R_CtoB_).transpose());
+  Eigen::Quaterniond qBtoW(R_WtoC.transpose() * tf2Eigen(R_CtoB_).transpose());
   pp_msg.qBtoW.x = qBtoW.x();
   pp_msg.qBtoW.y = qBtoW.y();
   pp_msg.qBtoW.z = qBtoW.z();
@@ -526,11 +527,17 @@ int main(int argc, char **argv)
   return 0;
 }
 
-static Eigen::Matrix3d tfRtoEigen(tf::Matrix3x3 tfR)
+static Eigen::Matrix3d tf2Eigen(tf::Matrix3x3 tfR)
 {
-  Eigen::Matrix3d EigenR;
-  EigenR << tfR[0][0], tfR[0][1], tfR[0][2], tfR[1][0], tfR[1][1], tfR[1][2], tfR[2][0], tfR[2][1], tfR[2][2];
-  return EigenR;
+  Eigen::Matrix3d R;
+  R << tfR[0][0], tfR[0][1], tfR[0][2], tfR[1][0], tfR[1][1], tfR[1][2], tfR[2][0], tfR[2][1], tfR[2][2];
+  return R;
+}
+static Eigen::Vector3d tf2Eigen(tf::Vector3 tfvec)
+{
+  Eigen::Vector3d vec;
+  vec << tfvec[0], tfvec[1], tfvec[2];
+  return vec;
 }
 
 //void print_tfVector3(tf::Vector3 vec)
