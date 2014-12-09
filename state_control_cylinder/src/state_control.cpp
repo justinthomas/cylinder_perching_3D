@@ -74,6 +74,7 @@ double traj_time;
 quadrotor_msgs::PositionCommand traj_goal_;
 void updateTrajGoal();
 static std::string traj_filename;
+bool traj_loaded_(false);
 
 // Publishers & services
 static ros::Publisher pub_goal_min_jerk_;
@@ -274,19 +275,15 @@ static void nanokontrol_cb(const sensor_msgs::Joy::ConstPtr &msg)
     */
     else if(msg->buttons[traj_button] && (!need_odom_ || (state_ == HOVER && have_odom_)))
     {
-      // Note: traj[t_idx][flat_out][deriv]
-      //
-      // Load the trajectory
-      int flag = loadTraj(traj_filename.c_str(), traj);
-      if (flag != 0)
+      if (!traj_loaded_)
       {
-        ROS_WARN("Couldn't load %s.  Error: %d.  Hovering in place...", traj_filename.c_str(), flag);
-        recovery();
+        ROS_WARN("No trajectory loaded.  Not transitioning into PREP_TRAJ.");
+        return;
       }
       else
       {
         state_ = PREP_TRAJ;
-        ROS_INFO("Loading Trajectory.  state_ == PREP_TRAJ;");
+        ROS_INFO("Switching to vision control.  state_ == PREP_TRAJ;");
 
         // Updates traj goal to allow for correct initalization of the trajectory
         traj_start_time = ros::Time::now();
@@ -355,6 +352,7 @@ void updateTrajGoal()
     i = traj.size() - 1;
   }
 
+  // Note: traj[t_idx][flat_out][deriv]
   // Note: offsets have been removed for vision control
   traj_goal_.position.x = traj[i][0][0];
   traj_goal_.position.y = traj[i][1][0];
@@ -443,14 +441,8 @@ static void image_update_cb(const cylinder_msgs::ParallelPlane::ConstPtr &msg)
 {
   vision_info_ = true;
 
-  // Extract stuff from the message
   Eigen::Matrix3d R_VtoW(Eigen::Quaterniond(msg->qVtoW.w, msg->qVtoW.x, msg->qVtoW.y, msg->qVtoW.z));
-  // cout << RED << "R_VtoW = " << endl << R_VtoW << RESET << endl;
 
-  // tf::Matrix3x3 R_CtoW(tf::Quaternion(msg->qCtoW.x, msg->qCtoW.y, msg->qCtoW.z, msg->qCtoW.w));
-  Eigen::Matrix3d R_CtoW(Eigen::Quaterniond(msg->qCtoW.w, msg->qCtoW.x, msg->qCtoW.y, msg->qCtoW.z));
-
-  // Eigen::Matrix3d R_BtoW(Eigen::Quaterniond(msg->qBtoW.w, msg->qBtoW.x, msg->qBtoW.y, msg->qBtoW.z));
   tf::Quaternion qBtoW(msg->qBtoW.x, msg->qBtoW.y, msg->qBtoW.z, msg->qBtoW.w);
   double current_yaw = tf::getYaw(qBtoW);
 
@@ -828,8 +820,16 @@ int main(int argc, char **argv)
   n.param("camera_fps", camera_rate, 50);
   ROS_INFO("Vision using gains: {kprho: %2.2f, kpu: %2.2f, kdrho: %2.2f, kdu: %2.2f}", kprho, kpu, kdrho, kdu);
 
-  n.param("traj_filename", traj_filename, string("traj.csv"));
-  ROS_INFO(YELLOW "Using traj_filename: \"%s\"" RESET, traj_filename.c_str());
+  n.param("traj_filename", traj_filename, string(""));
+  // Note: traj[t_idx][flat_out][deriv]
+  int flag = loadTraj(traj_filename.c_str(), traj);
+  if (flag == 0)
+  {
+    ROS_INFO(GREEN "Successfully loaded: traj_filename: \"%s\"" RESET, traj_filename.c_str());
+    traj_loaded_ = true;
+  }
+  else
+    ROS_WARN("Couldn't load trajectory: %s.  Error: %d.", traj_filename.c_str(), flag);
 
   // Timing stuff
   last_image_update_ = ros::Time::now();
