@@ -324,7 +324,7 @@ static void cylinder_pose_cb(const cylinder_msgs::CylinderPose::ConstPtr &msg)
   // The rotation from the virtual frame to the world
   Eigen::Matrix3d R_VtoW = R_WtoC.transpose() * tf2Eigen(R_VtoC);
 
-  tf::Transform T_VtoC(R_VtoC, tf::Vector3(-0.05, 0.05, 0));
+  tf::Transform T_VtoC(R_VtoC, tf::Vector3(0.0, 0.06, 0.0));
   tf::Transform T_CtoV = T_VtoC.inverse();
 
   tf::Vector3 P0_inV(msg->P0.x, msg->P0.y, msg->P0.z);
