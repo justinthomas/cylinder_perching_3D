@@ -5,7 +5,7 @@
   </include>
 
   <arg name="model" default="QuadrotorAlpha" />
-  <arg name="mass" default="0.73"/>
+  <arg name="mass" default="0.722"/>
 
   <group ns="$(arg model)">
 
