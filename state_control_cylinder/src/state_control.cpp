@@ -86,9 +86,9 @@ static ros::Publisher pub_goal_yaw_;
 static ros::Publisher pub_traj_signal_;
 static ros::ServiceClient srv_transition_;
 static ros::Publisher pub_vision_status_;
-static ros::Publisher so3_command_pub_;
+static ros::Publisher pub_so3_command_;
 
-// Vision Stuff
+// Vision and Cylinder Stuff
 // static tf::Transform T_Cam_to_Body_ = tf::Transform(tf::Matrix3x3(1,0,0, 0,-1,0, 0,0,-1), tf::Vector3(0,0,0));
 static void Jacobians(const Vector3d &P1_inV, const Vector3d &sdot, const Matrix3d &R_VtoW, Matrix3d &Jinv, Matrix3d &Jdot);
 double r;
@@ -98,6 +98,7 @@ double kprho, kpu, kdrho, kdu;
 double yaw_des_(0), yaw_des_dot_(0);
 ros::Time last_image_update_;
 int camera_rate;
+bool close_arm_ = false;
 
 // Quadrotor Pose
 static geometry_msgs::Point pos_;
@@ -147,8 +148,9 @@ static void nanokontrol_cb(const sensor_msgs::Joy::ConstPtr &msg)
     // Create and publish the so3_command
     quadrotor_msgs::SO3Command::Ptr cmd(new quadrotor_msgs::SO3Command);
     // cmd->header.stamp = ros::Time::now();
+    cmd->aux.angle_corrections[0] = close_arm_ ? 0.109 : 0.0579;
     cmd->aux.enable_motors = false;
-    so3_command_pub_.publish(cmd);
+    pub_so3_command_.publish(cmd);
   }
 
   if (state_ == ESTOP)
@@ -160,6 +162,12 @@ static void nanokontrol_cb(const sensor_msgs::Joy::ConstPtr &msg)
     recovery();
     return;
   }
+
+  if (msg->buttons[5])
+    close_arm_ = true;
+
+  if (msg->buttons[6])
+    close_arm_ = false;
 
   if(state_ == INIT)
   {
@@ -578,12 +586,12 @@ static void image_update_cb(const cylinder_msgs::ParallelPlane::ConstPtr &msg)
     }
     cmd->aux.current_yaw = current_yaw;
     cmd->aux.kf_correction = corrections_[0];
-    cmd->aux.angle_corrections[0] = corrections_[1];
+    cmd->aux.angle_corrections[0] = close_arm_ ? 0.109 : 0.0579;  // corrections_[1]
     cmd->aux.angle_corrections[1] = corrections_[2];
     cmd->aux.enable_motors = true;
     cmd->aux.use_external_yaw = true; // use_external_yaw_;
 
-    so3_command_pub_.publish(cmd);
+    pub_so3_command_.publish(cmd);
     ROS_INFO_THROTTLE(1, "Vision control");
   }
 
@@ -711,12 +719,12 @@ void recovery()
     }
     cmd->aux.current_yaw = 0;
     cmd->aux.kf_correction = corrections_[0];
-    cmd->aux.angle_corrections[0] = corrections_[1];
+    cmd->aux.angle_corrections[0] = close_arm_ ? 0.109 : 0.0579;  // corrections_[1];
     cmd->aux.angle_corrections[1] = corrections_[2];
     cmd->aux.enable_motors = true;
     cmd->aux.use_external_yaw = true;
 
-    so3_command_pub_.publish(cmd);
+    pub_so3_command_.publish(cmd);
   }
 }
 
@@ -847,7 +855,7 @@ int main(int argc, char **argv)
   pub_traj_signal_ = n.advertise<std_msgs::Bool>("traj_signal", 1);
   pub_motors_ = n.advertise<std_msgs::Bool>("motors", 1);
   pub_estop_ = n.advertise<std_msgs::Empty>("estop", 1);
-  so3_command_pub_ = n.advertise<quadrotor_msgs::SO3Command>("so3_cmd", 1);
+  pub_so3_command_ = n.advertise<quadrotor_msgs::SO3Command>("so3_cmd", 1);
 
   // Subscribers
   ros::Subscriber sub_odom = n.subscribe("odom", 1, &odom_cb, ros::TransportHints().tcpNoDelay());
@@ -863,7 +871,7 @@ int main(int argc, char **argv)
   // Create and publish the so3_command
   quadrotor_msgs::SO3Command::Ptr cmd(new quadrotor_msgs::SO3Command);
   cmd->aux.enable_motors = false;
-  so3_command_pub_.publish(cmd);
+  pub_so3_command_.publish(cmd);
 
   // Spin
   ros::spin();
