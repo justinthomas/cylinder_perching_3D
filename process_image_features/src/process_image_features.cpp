@@ -40,7 +40,7 @@ static Eigen::Vector3d tf2Eigen(tf::Vector3 tfvec);
 static double filt_alpha;
 
 // Static transformations
-static const tf::Matrix3x3 R_CtoB_ = tf::Matrix3x3(sqrt(2)/2,sqrt(2)/2,0, sqrt(2)/2,-sqrt(2)/2,0, 0,0,-1);
+static const tf::Matrix3x3 R_CtoB_ = tf::Matrix3x3(-sqrt(2)/2,sqrt(2)/2,0, -sqrt(2)/2,-sqrt(2)/2,0, 0,0,1);
 static const tf::Transform T_CtoB_ = tf::Transform(R_CtoB_, tf::Vector3(-0.05, 0.05, 0));
 
 //IMU buffer
@@ -315,11 +315,11 @@ static void cylinder_pose_cb(const cylinder_msgs::CylinderPose::ConstPtr &msg)
   // cout << "R_WtoC" << endl << R_WtoC << endl;
 
   // Determine the Rotation from the virtual camera to the real camera frame
-  tf::Vector3 z_pp_in_C = tfCross(a_in_C, -y_in_C);
+  tf::Vector3 z_pp_in_C = tfCross(a_in_C, y_in_C);
   tf::Matrix3x3 R_VtoC(
-      a_in_C[0], -y_in_C[0], z_pp_in_C[0],
-      a_in_C[1], -y_in_C[1], z_pp_in_C[1],
-      a_in_C[2], -y_in_C[2], z_pp_in_C[2]);
+      a_in_C[0], y_in_C[0], z_pp_in_C[0],
+      a_in_C[1], y_in_C[1], z_pp_in_C[1],
+      a_in_C[2], y_in_C[2], z_pp_in_C[2]);
 
   // The rotation from the virtual frame to the world
   Eigen::Matrix3d R_VtoW = R_WtoC.transpose() * tf2Eigen(R_VtoC);
