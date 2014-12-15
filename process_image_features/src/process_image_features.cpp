@@ -324,14 +324,15 @@ static void cylinder_pose_cb(const cylinder_msgs::CylinderPose::ConstPtr &msg)
   // The rotation from the virtual frame to the world
   Eigen::Matrix3d R_VtoW = R_WtoC.transpose() * tf2Eigen(R_VtoC);
 
-  tf::Transform T_VtoC(R_VtoC, tf::Vector3(0.0, 0.06, 0.0));
-  tf::Transform T_CtoV = T_VtoC.inverse();
+  // We need this to transform points in the camera to a virtual camera that
+  // is fixed to the body of the robot
+  tf::Vector3 t_Cam_Shift(0.0, -0.06, 0.015);
 
-  tf::Vector3 P0_inV(msg->P0.x, msg->P0.y, msg->P0.z);
-  P0_inV = T_CtoV * P0_inV;
+  tf::Vector3 P0_inC(msg->P0.x, msg->P0.y, msg->P0.z);
+  tf::Vector3 P0_inV = R_VtoC.transpose() * (P0_inC + t_Cam_Shift);
 
-  tf::Vector3 P1_inV(msg->P1.x, msg->P1.y, msg->P1.z);
-  P1_inV = T_CtoV * P1_inV;
+  tf::Vector3 P1_inC(msg->P1.x, msg->P1.y, msg->P1.z);
+  tf::Vector3 P1_inV = R_VtoC.transpose() * (P1_inC + t_Cam_Shift);
 
   // The parallel plane message
   cylinder_msgs::ParallelPlane pp_msg;
