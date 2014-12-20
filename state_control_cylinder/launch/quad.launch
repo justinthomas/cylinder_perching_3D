@@ -88,6 +88,7 @@
       <remap from="~motors" to="motors"/>
       <remap from="~estop" to="estop"/>
       <remap from="~so3_cmd" to="so3_cmd"/>
+      <remap from="~pwm_cmd" to="quad_encode_msg/pwm_cmd"/>
       <remap from="~min_jerk_goal" to="controllers_manager/line_tracker_min_jerk/goal"/>
       <remap from="~line_tracker_distance_goal" to="controllers_manager/line_tracker_distance/goal"/>
       <remap from="~vel_goal" to="controllers_manager/velocity_tracker/vel_cmd_with_yaw"/>

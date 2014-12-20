@@ -22,6 +22,7 @@
 #include <quadrotor_msgs/FlatOutputs.h>
 #include <quadrotor_msgs/PositionCommand.h>
 #include <quadrotor_msgs/SO3Command.h>
+#include <quadrotor_msgs/PWMCommand.h>
 #include "nano_kontrol2.h"
 #include <trajectory.h>
 #include <cylinder_msgs/ImageFeatures.h>
@@ -86,6 +87,7 @@ static ros::Publisher pub_traj_signal_;
 static ros::ServiceClient srv_transition_;
 static ros::Publisher pub_vision_status_;
 static ros::Publisher pub_so3_command_;
+static ros::Publisher pub_pwm_command_;
 
 // Vision and Cylinder Stuff
 // static tf::Transform T_Cam_to_Body_ = tf::Transform(tf::Matrix3x3(1,0,0, 0,-1,0, 0,0,-1), tf::Vector3(0,0,0));
@@ -97,13 +99,12 @@ double kprho, kpu, kdrho, kdu;
 double yaw_des_(0), yaw_des_dot_(0);
 ros::Time last_image_update_;
 int camera_rate;
-bool close_arm_ = false;
 
 // Quadrotor Pose
 static geometry_msgs::Point pos_;
 static geometry_msgs::Vector3 vel_;
 static geometry_msgs::Quaternion ori_;
-static tf::Quaternion imu_q_, odom_q_;
+static tf::Quaternion imu_q_;
 static bool have_odom_(false), imu_info_ (false), vision_info_(false), need_odom_(true);
 ros::Time last_odom_time_;
 
@@ -124,6 +125,20 @@ void go_to(const quadrotor_msgs::FlatOutputs goal);
 // Callbacks and functions
 static void nanokontrol_cb(const sensor_msgs::Joy::ConstPtr &msg)
 {
+
+  if(msg->buttons[5])
+  {
+    quadrotor_msgs::PWMCommand pwm_cmd;
+    pwm_cmd.pwm[0] = 0.1;
+    pub_pwm_command_.publish(pwm_cmd);
+  }
+  else if (msg->buttons[6])
+  {
+    quadrotor_msgs::PWMCommand pwm_cmd;
+    pwm_cmd.pwm[0] = 0.5;
+    pub_pwm_command_.publish(pwm_cmd);
+  }
+
   if(msg->buttons[estop_button])
   {
     state_ = ESTOP;
@@ -147,7 +162,6 @@ static void nanokontrol_cb(const sensor_msgs::Joy::ConstPtr &msg)
     // Create and publish the so3_command
     quadrotor_msgs::SO3Command::Ptr cmd(new quadrotor_msgs::SO3Command);
     // cmd->header.stamp = ros::Time::now();
-    cmd->aux.angle_corrections[0] = close_arm_ ? 0.109 : 0.0579;
     cmd->aux.enable_motors = false;
     pub_so3_command_.publish(cmd);
   }
@@ -161,12 +175,6 @@ static void nanokontrol_cb(const sensor_msgs::Joy::ConstPtr &msg)
     recovery();
     return;
   }
-
-  if (msg->buttons[5])
-    close_arm_ = true;
-
-  if (msg->buttons[6])
-    close_arm_ = false;
 
   if(state_ == INIT)
   {
@@ -587,7 +595,7 @@ static void image_update_cb(const cylinder_msgs::ParallelPlane::ConstPtr &msg)
     }
     cmd->aux.current_yaw = current_yaw;
     cmd->aux.kf_correction = corrections_[0];
-    cmd->aux.angle_corrections[0] = close_arm_ ? 0.109 : 0.0579;  // corrections_[1]
+    cmd->aux.angle_corrections[0] = corrections_[1];
     cmd->aux.angle_corrections[1] = corrections_[2];
     cmd->aux.enable_motors = true;
     cmd->aux.use_external_yaw = true; // use_external_yaw_;
@@ -720,7 +728,7 @@ void recovery()
     }
     cmd->aux.current_yaw = 0;
     cmd->aux.kf_correction = corrections_[0];
-    cmd->aux.angle_corrections[0] = close_arm_ ? 0.109 : 0.0579;  // corrections_[1];
+    cmd->aux.angle_corrections[0] = corrections_[1];
     cmd->aux.angle_corrections[1] = corrections_[2];
     cmd->aux.enable_motors = true;
     cmd->aux.use_external_yaw = true;
@@ -847,6 +855,7 @@ int main(int argc, char **argv)
   pub_motors_ = n.advertise<std_msgs::Bool>("motors", 1);
   pub_estop_ = n.advertise<std_msgs::Empty>("estop", 1);
   pub_so3_command_ = n.advertise<quadrotor_msgs::SO3Command>("so3_cmd", 1);
+  pub_pwm_command_ = n.advertise<quadrotor_msgs::PWMCommand>("pwm_cmd", 1);
 
   // Subscribers
   ros::Subscriber sub_odom = n.subscribe("odom", 1, &odom_cb, ros::TransportHints().tcpNoDelay());
