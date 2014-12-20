@@ -16,7 +16,6 @@
 #include <std_msgs/Float64.h>
 #include <tf/transform_datatypes.h>
 #include <tf/LinearMath/Matrix3x3.h>
-#include <tf/transform_broadcaster.h>
 
 // Custom Includes
 #include <controllers_manager/Transition.h>
@@ -757,16 +756,6 @@ static void odom_cb(const nav_msgs::Odometry::ConstPtr &msg)
   pos_ = msg->pose.pose.position;
   vel_ = msg->twist.twist.linear;
   ori_ = msg->pose.pose.orientation;
-
-  // Update the odometry quaternion
-  tf::quaternionMsgToTF(ori_, odom_q_);
-
-  // For simulation, broadcast the quadrotor frame
-  static tf::TransformBroadcaster br;
-  tf::Transform transform;
-  transform.setOrigin( tf::Vector3(pos_.x, pos_.y, pos_.z) );
-  transform.setRotation(odom_q_);
-  br.sendTransform(tf::StampedTransform(transform, ros::Time::now(), "/simulator", "/quadrotor"));
 }
 
 int main(int argc, char **argv)
