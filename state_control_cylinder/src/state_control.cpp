@@ -281,53 +281,7 @@ static void nanokontrol_cb(const sensor_msgs::Joy::ConstPtr &msg)
       srv_transition_.call(transition_cmd);
     }
     */
-    else if(msg->buttons[traj_button] && (!need_odom_ || (state_ == HOVER && have_odom_)))
-    {
-      if (!traj_loaded_)
-      {
-        ROS_WARN("No trajectory loaded.  Not transitioning into PREP_TRAJ.");
-        return;
-      }
-      else
-      {
-        state_ = PREP_TRAJ;
-        ROS_INFO("Switching to vision control.  state_ == PREP_TRAJ;");
 
-        // Updates traj goal to allow for correct initalization of the trajectory
-        traj_start_time = ros::Time::now();
-        updateTrajGoal();
-
-        controllers_manager::Transition transition_cmd;
-        transition_cmd.request.controller = null_tracker_str;
-        srv_transition_.call(transition_cmd);
-      }
-    }
-    else if(msg->buttons[play_button] && state_ == PREP_TRAJ)
-    {
-      // If we are ready to start the trajectory
-      if (!need_odom_ || sqrt( pow(vel_.x,2) + pow(vel_.y,2) + pow(vel_.z,2) ) < 0.05)
-      {
-        ROS_INFO("Starting Trajectory");
-
-        state_ = TRAJ;
-
-        // Publish the trajectory signal
-        std_msgs::Bool traj_on_signal;
-        traj_on_signal.data = true;
-        pub_traj_signal_.publish(traj_on_signal);
-
-        traj_start_time = ros::Time::now();
-        updateTrajGoal();
-
-        controllers_manager::Transition transition_cmd;
-        transition_cmd.request.controller = null_tracker_str;
-        srv_transition_.call(transition_cmd);
-      }
-      else
-      {
-        ROS_WARN("Not ready to start trajectory.");
-      }
-    }
 //    // Vision Control
 //    else if(selected && msg->buttons[vision_control_button] && state_ == HOVER && vision_info_ && imu_info_)
 //    {
@@ -338,6 +292,54 @@ static void nanokontrol_cb(const sensor_msgs::Joy::ConstPtr &msg)
 //      srv_transition_.call(transition_cmd);
 //      state_ = VISION_CONTROL;
 //    }
+  }
+
+  if(msg->buttons[traj_button] && (!need_odom_ || (state_ == HOVER && have_odom_)))
+  {
+    if (!traj_loaded_)
+    {
+      ROS_WARN("No trajectory loaded.  Not transitioning into PREP_TRAJ.");
+      return;
+    }
+    else
+    {
+      state_ = PREP_TRAJ;
+      ROS_INFO("Switching to vision control.  state_ == PREP_TRAJ;");
+
+      // Updates traj goal to allow for correct initalization of the trajectory
+      traj_start_time = ros::Time::now();
+      updateTrajGoal();
+
+      controllers_manager::Transition transition_cmd;
+      transition_cmd.request.controller = null_tracker_str;
+      srv_transition_.call(transition_cmd);
+    }
+  }
+  else if(msg->buttons[play_button] && state_ == PREP_TRAJ)
+  {
+    // If we are ready to start the trajectory
+    if (!need_odom_ || sqrt( pow(vel_.x,2) + pow(vel_.y,2) + pow(vel_.z,2) ) < 0.05)
+    {
+      ROS_INFO("Starting Trajectory");
+
+      state_ = TRAJ;
+
+      // Publish the trajectory signal
+      std_msgs::Bool traj_on_signal;
+      traj_on_signal.data = true;
+      pub_traj_signal_.publish(traj_on_signal);
+
+      traj_start_time = ros::Time::now();
+      updateTrajGoal();
+
+      controllers_manager::Transition transition_cmd;
+      transition_cmd.request.controller = null_tracker_str;
+      srv_transition_.call(transition_cmd);
+    }
+    else
+    {
+      ROS_WARN("Not ready to start trajectory.");
+    }
   }
 }
 

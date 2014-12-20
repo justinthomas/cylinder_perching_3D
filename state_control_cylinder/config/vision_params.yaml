@@ -1,6 +1,6 @@
 vision_gains:
   kprho: 5.0
-  kpu: 3.0
+  kpu: 5.0
   kdrho: 1.7
   kdu: 0.7
 
@@ -16,6 +16,6 @@ measurement_noise_rhos: 0.0015
 measurement_noise_u: 0.002
 #measurement_noise_u: 0.05
 
-traj_filename: "/home/xua/git/cylinder_perching_3D/trajectories/traj_vertical.csv"
+traj_filename: "/home/xua/git/cylinder_perching_3D/trajectories/traj_perch.csv"
 
 need_odom: false
