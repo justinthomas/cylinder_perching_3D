@@ -99,6 +99,7 @@ double kprho, kpu, kdrho, kdu;
 double yaw_des_(0), yaw_des_dot_(0);
 ros::Time last_image_update_;
 int camera_rate;
+Vector3d sdes_(-0.1, -0.1, 0.1);
 
 // Quadrotor Pose
 static geometry_msgs::Point pos_;
@@ -125,6 +126,8 @@ void go_to(const quadrotor_msgs::FlatOutputs goal);
 // Callbacks and functions
 static void nanokontrol_cb(const sensor_msgs::Joy::ConstPtr &msg)
 {
+  double rho_des = -(msg->axes[0]+1) - 0.1;
+  sdes_ = Vector3d(rho_des, rho_des, 0.5*(msg->axes[2]+1));
 
   if(msg->buttons[5])
   {
@@ -479,10 +482,15 @@ static void image_update_cb(const cylinder_msgs::ParallelPlane::ConstPtr &msg)
   // ROS_INFO_THROTTLE(1, CYAN   "Velocity Estimate in World: {%2.2f, %2.2f, %2.2f}" RESET, vel_world(0), vel_world(1), vel_world(2));
 
   // These will eventually be set by a trajectory
-  Vector3d sdes(traj_goal_.position.x, traj_goal_.position.y, traj_goal_.position.z),
-           sdotdes(traj_goal_.velocity.x, traj_goal_.velocity.y, traj_goal_.velocity.z),
-           sddotdes(traj_goal_.acceleration.x, traj_goal_.acceleration.y, traj_goal_.acceleration.z),
-           sdddotdes(traj_goal_.jerk.x, traj_goal_.jerk.y, traj_goal_.jerk.z); // sdes(-0.2,0.2,0.437),
+  //Vector3d sdes(traj_goal_.position.x, traj_goal_.position.y, traj_goal_.position.z),
+  //         sdotdes(traj_goal_.velocity.x, traj_goal_.velocity.y, traj_goal_.velocity.z),
+  //         sddotdes(traj_goal_.acceleration.x, traj_goal_.acceleration.y, traj_goal_.acceleration.z),
+  //         sdddotdes(traj_goal_.jerk.x, traj_goal_.jerk.y, traj_goal_.jerk.z);
+
+  Vector3d sdes = sdes_;
+  Vector3d sdotdes(0,0,0), sddotdes(0,0,0), sdddotdes(0,0,0);
+  yaw_des_ = yaw_off;
+  yaw_des_dot_ = 0;
 
   yaw_des_ = traj_goal_.yaw;
   yaw_des_dot_ = traj_goal_.yaw_dot;
