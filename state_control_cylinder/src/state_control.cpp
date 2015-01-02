@@ -127,7 +127,7 @@ void go_to(const quadrotor_msgs::FlatOutputs goal);
 static void nanokontrol_cb(const sensor_msgs::Joy::ConstPtr &msg)
 {
   double rho_des = -0.39/2*(msg->axes[0]+1) - 0.01;
-  sdes_ = Vector3d(rho_des, rho_des, -0.5*(msg->axes[1]+1));
+  sdes_ = Vector3d(rho_des, rho_des, -0.8*(msg->axes[1]+1));
 
   if(msg->buttons[5])
   {
@@ -138,7 +138,7 @@ static void nanokontrol_cb(const sensor_msgs::Joy::ConstPtr &msg)
   else if (msg->buttons[6])
   {
     quadrotor_msgs::PWMCommand pwm_cmd;
-    pwm_cmd.pwm[0] = 0.4; // 0.5;
+    pwm_cmd.pwm[0] = 0.4;
     pub_pwm_command_.publish(pwm_cmd);
   }
 
@@ -544,7 +544,8 @@ static void image_update_cb(const cylinder_msgs::ParallelPlane::ConstPtr &msg)
   // For now, reduce the thrust magnitude
   // force = fmin(force.norm(), 0.95 * mass_ * g) * force.normalized();
 
-  ROS_INFO_THROTTLE(1, GREEN "force: {%2.2f, %2.2f, %2.2f}" RESET, force(0), force(1), force(2));
+  ROS_INFO_THROTTLE(1, GREEN "force/weight {x, y, z} = {%2.2f, %2.2f, %2.2f}" RESET, 
+      force(0) / (mass_*gravity_), force(1) / (mass_*gravity_), force(2) / (mass_*gravity_));
 
   // Vector3d force1 = mass_ * Jinv * kx.asDiagonal() * e_pos;
   // ROS_INFO_THROTTLE(1, GREEN "Position component of force: {%2.2f, %2.2f, %2.2f}" RESET, force1(0), force1(1), force1(2));
