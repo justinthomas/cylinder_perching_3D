@@ -20,5 +20,5 @@ function motorsoff()
 
 function servo
 {
-  rostopic pub -1 /QuadrotorAlpha/so3_cmd quadrotor_msgs/SO3Command "{force: {x: 0.0, y: 0.0, z: 1.0}, aux: {angle_corrections:[$1,0], enable_motors: False}}"
+  rostopic pub -1 /QuadrotorAlpha/quad_encode_msg/pwm_cmd quadrotor_msgs/PWMCommand "{pwm:[$1,0]}"
 }
