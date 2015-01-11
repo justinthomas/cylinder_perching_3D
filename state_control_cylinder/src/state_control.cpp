@@ -84,6 +84,7 @@ static ros::Publisher pub_motors_;
 static ros::Publisher pub_estop_;
 static ros::Publisher pub_goal_yaw_;
 static ros::Publisher pub_traj_signal_;
+static ros::Publisher pub_traj_goal_;
 static ros::ServiceClient srv_transition_;
 static ros::Publisher pub_vision_status_;
 static ros::Publisher pub_so3_command_;
@@ -392,6 +393,8 @@ void updateTrajGoal()
 
   traj_goal_.yaw = traj[i][3][0] + yaw_off;
   traj_goal_.yaw_dot = traj[i][3][1];
+
+  pub_traj_goal_.publish(traj_goal_);
 
   // traj_goal_.kx[0] = traj[i][4][0];
   // traj_goal_.kx[1] = traj[i][4][1];
@@ -861,6 +864,7 @@ int main(int argc, char **argv)
   pub_goal_velocity_ = n.advertise<quadrotor_msgs::FlatOutputs>("vel_goal", 10);
   pub_goal_yaw_ = n.advertise<quadrotor_msgs::FlatOutputs>("line_tracker_yaw_goal", 10);
   pub_traj_signal_ = n.advertise<std_msgs::Bool>("traj_signal", 1);
+  pub_traj_goal_ = n.advertise<quadrotor_msgs::PositionCommand>("traj_goal", 10);
   pub_motors_ = n.advertise<std_msgs::Bool>("motors", 1);
   pub_estop_ = n.advertise<std_msgs::Empty>("estop", 1);
   pub_so3_command_ = n.advertise<quadrotor_msgs::SO3Command>("so3_cmd", 1);
