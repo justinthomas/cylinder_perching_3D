@@ -611,9 +611,9 @@ static void image_update_cb(const cylinder_msgs::ParallelPlane::ConstPtr &msg)
     cmd->orientation.y = qdes.y();
     cmd->orientation.z = qdes.z();
     cmd->orientation.w = qdes.w();
-    cmd->angular_velocity.x = angular_velocity(0);
-    cmd->angular_velocity.y = angular_velocity(1);
-    cmd->angular_velocity.z = angular_velocity(2);
+    cmd->angular_velocity.x = 0*angular_velocity(0);
+    cmd->angular_velocity.y = 0*angular_velocity(1);
+    cmd->angular_velocity.z = 0*angular_velocity(2);
     for(int i = 0; i < 3; i++)
     {
       cmd->kR[i] = kR_[i];

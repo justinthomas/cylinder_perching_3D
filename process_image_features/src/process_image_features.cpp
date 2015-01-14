@@ -41,7 +41,7 @@ static double filt_alpha;
 
 // Static transformations
 static const tf::Matrix3x3 R_CtoB_ = tf::Matrix3x3(-sqrt(2)/2,sqrt(2)/2,0, -sqrt(2)/2,-sqrt(2)/2,0, 0,0,1);
-static const tf::Transform T_CtoB_ = tf::Transform(R_CtoB_, tf::Vector3(-0.05, 0.05, 0));
+// static const tf::Transform T_CtoB_ = tf::Transform(R_CtoB_, tf::Vector3(-0.05, 0.05, 0));
 
 //IMU buffer
 //The delay need to be compensated
@@ -130,7 +130,7 @@ static void image_features_cb(const cylinder_msgs::ImageFeatures::ConstPtr &msg)
   if (Delta[2] < 0)
   {
     Delta = -1 * Delta;
-    // ROS_WARN("Sign of Delta switched");
+    ROS_WARN("Sign of Delta switched");
   }
   // ROS_INFO_THROTTLE(1, "Delta: {%2.4f, %2.4f, %2.4f}", Delta[0], Delta[1], Delta[2]);
 
@@ -155,7 +155,7 @@ static void image_features_cb(const cylinder_msgs::ImageFeatures::ConstPtr &msg)
   // #### Not a good test
   if (a[1] < 0)
   {
-    // ROS_INFO(MAGENTA "Axis switched" RESET);
+    ROS_INFO(MAGENTA "Axis switched" RESET);
     a = -1.0 * a;
   }
 
@@ -293,9 +293,6 @@ static void cylinder_pose_cb(const cylinder_msgs::CylinderPose::ConstPtr &msg)
   // Ignore yaw from IMU
   double yaw, pitch, roll;
   tf::Matrix3x3 R_IMU(imu_q_);
-  R_IMU.getEulerYPR(yaw, pitch, roll);
-  // #### Is this necessary
-  R_IMU.setEulerYPR(0, pitch, roll);
 
   z_in_C = R_CtoB_.transpose() * R_IMU.transpose() * tf::Vector3(0, 0, 1);
   // ROS_INFO_THROTTLE(1, "\e[96mz_in_C: {%2.2f, %2.2f, %2.2f}\e[0m", z_in_C[0], z_in_C[1], z_in_C[2]);
