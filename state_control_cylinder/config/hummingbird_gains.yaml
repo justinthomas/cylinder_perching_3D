@@ -27,8 +27,9 @@ gains:
 # kf_default: 0.00000006 
 #
 # tuning: Corrections: {kf, roll, pitch} = {3.650794e-09, 2.368661e-03, 4.974188e-02}
+# Corrections: {kf, roll, pitch} = {1.269841e-09, -4.737322e-03, 3.316126e-02}
 corrections:
-  kf: 0.000000003650794
-  r: 0.002368661
-  p: 0.04974188
+  kf: 0.00000000127
+  r: 0.00474
+  p: 0.03316
 

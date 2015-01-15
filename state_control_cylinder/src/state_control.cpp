@@ -103,7 +103,7 @@ double yaw_des_(0), yaw_des_dot_(0);
 ros::Time last_image_update_;
 int camera_rate;
 Vector3d sdes_(-0.1, -0.1, 0.1);
-double gains_scale_[4];
+double gains_mod_[4];
 
 // Quadrotor Pose
 static geometry_msgs::Point pos_;
@@ -146,10 +146,10 @@ static void nanokontrol_cb(const sensor_msgs::Joy::ConstPtr &msg)
     pub_pwm_command_.publish(pwm_cmd);
   }
 
-  gains_scale_[0] = (msg->axes[4]+1);
-  gains_scale_[1] = (msg->axes[5]+1);
-  gains_scale_[2] = (msg->axes[6]+1);
-  gains_scale_[3] = (msg->axes[7]+1);
+  gains_mod_[0] = msg->axes[4];
+  gains_mod_[1] = msg->axes[5];
+  gains_mod_[2] = msg->axes[6];
+  gains_mod_[3] = msg->axes[7];
 
   if(msg->buttons[estop_button])
   {
@@ -519,8 +519,8 @@ static void image_update_cb(const cylinder_msgs::ParallelPlane::ConstPtr &msg)
 
   // Gains
   Vector3d kx, kv;
-  kx << kprho * gains_scale_[0], kprho * gains_scale_[0], kpu * gains_scale_[2];
-  kv << kdrho * gains_scale_[1], kdrho * gains_scale_[1], kdu * gains_scale_[3];
+  kx << kprho + gains_mod_[0], kprho + gains_mod_[0], kpu + gains_mod_[2];
+  kv << kdrho + gains_mod_[1], kdrho + gains_mod_[1], kdu + gains_mod_[3];
 
   // Temp output
   // Vector3d temp = mass_ * R_VtoW * Jinv * (kx.asDiagonal() * e_pos); //  + kv.asDiagonal() * e_vel + sddotdes);
@@ -556,7 +556,7 @@ static void image_update_cb(const cylinder_msgs::ParallelPlane::ConstPtr &msg)
   // force = fmin(force.norm(), 0.95 * mass_ * g) * force.normalized();
 
   ROS_INFO_THROTTLE(1, GREEN "force/weight {x, y, z} = {%2.2f, %2.2f, %2.2f}, gains scale = {%1.2f, %1.2f, %1.2f, %1.2f}" RESET,
-      force(0) / (mass_*gravity_), force(1) / (mass_*gravity_), force(2) / (mass_*gravity_), gains_scale_[0], gains_scale_[1], gains_scale_[2], gains_scale_[3]);
+      force(0) / (mass_*gravity_), force(1) / (mass_*gravity_), force(2) / (mass_*gravity_), gains_mod_[0], gains_mod_[1], gains_mod_[2], gains_mod_[3]);
 
   Vector3d force1 = mass_ * Jinv * kx.asDiagonal() * e_pos;
   // ROS_INFO_THROTTLE(1, GREEN "Position component of force: {%2.2f, %2.2f, %2.2f}" RESET, force1(0), force1(1), force1(2));
