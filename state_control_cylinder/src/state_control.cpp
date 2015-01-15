@@ -102,8 +102,8 @@ double kprho, kpu, kdrho, kdu;
 double yaw_des_(0), yaw_des_dot_(0);
 ros::Time last_image_update_;
 int camera_rate;
-Vector3d sdes_(-0.1, -0.1, 0.1);
 double gains_mod_[4];
+// Vector3d sdes_(-0.1, -0.1, 0.1);
 
 // Quadrotor Pose
 static geometry_msgs::Point pos_;
@@ -130,8 +130,8 @@ void go_to(const quadrotor_msgs::FlatOutputs goal);
 // Callbacks and functions
 static void nanokontrol_cb(const sensor_msgs::Joy::ConstPtr &msg)
 {
-  double rho_des = -0.39/2*(msg->axes[0]+1) - 0.01;
-  sdes_ = Vector3d(rho_des, rho_des, -0.8*(msg->axes[1]+1));
+  // double rho_des = -0.39/2*(msg->axes[0]+1) - 0.01;
+  // sdes_ = Vector3d(rho_des, rho_des, -0.8*(msg->axes[1]+1));
 
   if(msg->buttons[5])
   {
@@ -487,24 +487,19 @@ static void image_update_cb(const cylinder_msgs::ParallelPlane::ConstPtr &msg)
   // Matrix3d T = R_VtoW * Jinv;
   // cout << CYAN << "Jinv = " << endl << Jinv << RESET << endl; // cout << BLUE << "T = " << endl << T << RESET << endl;
 
-  // Optional
-  // Vector3d vel_world = T * sdot;
-  // ROS_INFO_THROTTLE(1, YELLOW "Actual Velocity:            {%2.2f, %2.2f, %2.2f}" RESET, vel_.x, vel_.y, vel_.z);
-  // ROS_INFO_THROTTLE(1, CYAN   "Velocity Estimate in World: {%2.2f, %2.2f, %2.2f}" RESET, vel_world(0), vel_world(1), vel_world(2));
-
   // These will eventually be set by a trajectory
-  //Vector3d sdes(traj_goal_.position.x, traj_goal_.position.y, traj_goal_.position.z),
-  //         sdotdes(traj_goal_.velocity.x, traj_goal_.velocity.y, traj_goal_.velocity.z),
-  //         sddotdes(traj_goal_.acceleration.x, traj_goal_.acceleration.y, traj_goal_.acceleration.z),
-  //         sdddotdes(traj_goal_.jerk.x, traj_goal_.jerk.y, traj_goal_.jerk.z);
+  Vector3d sdes(traj_goal_.position.x, traj_goal_.position.y, traj_goal_.position.z),
+           sdotdes(traj_goal_.velocity.x, traj_goal_.velocity.y, traj_goal_.velocity.z),
+           sddotdes(traj_goal_.acceleration.x, traj_goal_.acceleration.y, traj_goal_.acceleration.z),
+           sdddotdes(traj_goal_.jerk.x, traj_goal_.jerk.y, traj_goal_.jerk.z);
 
-  Vector3d sdes = sdes_;
-  Vector3d sdotdes(0,0,0), sddotdes(0,0,0), sdddotdes(0,0,0);
-  yaw_des_ = yaw_off;
-  yaw_des_dot_ = 0;
+  // Vector3d sdes = sdes_;
+  // Vector3d sdotdes(0,0,0), sddotdes(0,0,0), sdddotdes(0,0,0);
+  // yaw_des_ = yaw_off;
+  // yaw_des_dot_ = 0;
 
-  yaw_des_ = traj_goal_.yaw;
-  yaw_des_dot_ = traj_goal_.yaw_dot;
+  // yaw_des_ = traj_goal_.yaw;
+  // yaw_des_dot_ = traj_goal_.yaw_dot;
 
   // Useful defs
   static const Vector3d e3(0,0,1);
@@ -529,23 +524,11 @@ static void image_update_cb(const cylinder_msgs::ParallelPlane::ConstPtr &msg)
   Matrix3d Jinvdot = - Jinv * Jdot * Jinv;
 
   // Nominal thrust (in the world)
-  Vector3d force;
-  if (state_ == TRAJ)
-  {
-    force = mass_* (gravity_ * e3
-      + Jinv * kx.asDiagonal() * e_pos
-      + Jinv * kv.asDiagonal() * e_vel
-      + Jinv * sddotdes
-      + Jinvdot * sdot);
-  }
-  else
-  {
-    force = mass_* (gravity_ * e3
-      + Jinv * kx.asDiagonal() * e_pos
-      + Jinv * kv.asDiagonal() * e_vel
-      + Jinv * sddotdes
-      + Jinvdot * sdot);
-  }
+  Vector3d force = mass_* (gravity_ * e3
+    + Jinv * kx.asDiagonal() * e_pos
+    + Jinv * kv.asDiagonal() * e_vel
+    + Jinv * sddotdes
+    + Jinvdot * sdot);
 
   // Vector3d temp = 10000 * mass_ * Jinvdot * sdot;
   // ROS_INFO_THROTTLE(1, MAGENTA "Jinvdot term: {%2.3f, %2.3f, %2.3f}" RESET, temp(0), temp(1), temp(2));
@@ -555,19 +538,19 @@ static void image_update_cb(const cylinder_msgs::ParallelPlane::ConstPtr &msg)
   // For now, reduce the thrust magnitude
   // force = fmin(force.norm(), 0.95 * mass_ * g) * force.normalized();
 
-  ROS_INFO_THROTTLE(1, GREEN "force/weight {x, y, z} = {%2.2f, %2.2f, %2.2f}, gains scale = {%1.2f, %1.2f, %1.2f, %1.2f}" RESET,
+  ROS_INFO_THROTTLE(1, GREEN "force/weight {x, y, z} = {%2.2f, %2.2f, %2.2f}, gains mod = {%1.2f, %1.2f, %1.2f, %1.2f}" RESET,
       force(0) / (mass_*gravity_), force(1) / (mass_*gravity_), force(2) / (mass_*gravity_), gains_mod_[0], gains_mod_[1], gains_mod_[2], gains_mod_[3]);
 
-  Vector3d force1 = mass_ * Jinv * kx.asDiagonal() * e_pos;
+  // Vector3d force1 = mass_ * Jinv * kx.asDiagonal() * e_pos;
   // ROS_INFO_THROTTLE(1, GREEN "Position component of force: {%2.2f, %2.2f, %2.2f}" RESET, force1(0), force1(1), force1(2));
-  Vector3d force2 = mass_ * Jinv * kv.asDiagonal() * e_vel + mass_ * Jinvdot * sdot;
+  // Vector3d force2 = mass_ * Jinv * kv.asDiagonal() * e_vel + mass_ * Jinvdot * sdot;
   // ROS_INFO_THROTTLE(1, RED "Velocity component of force: {%2.2f, %2.2f, %2.2f}" RESET, force2(0), force2(1), force2(2));
 
-  geometry_msgs::Vector3 temp;
-  temp.x = force1(0); temp.y = force1(1); temp.z = force1(2);
-  pub_force_pos_.publish(temp);
-  temp.x = force2(0); temp.y = force2(1); temp.z = force2(2);
-  pub_force_vel_.publish(temp);
+  // geometry_msgs::Vector3 temp;
+  // temp.x = force1(0); temp.y = force1(1); temp.z = force1(2);
+  // pub_force_pos_.publish(temp);
+  // temp.x = force2(0); temp.y = force2(1); temp.z = force2(2);
+  // pub_force_vel_.publish(temp);
 
   Eigen::Vector3d b1c, b2c, b3c;
   Eigen::Vector3d b1d(cos(yaw_des_), sin(yaw_des_), 0);
@@ -580,23 +563,17 @@ static void image_update_cb(const cylinder_msgs::ParallelPlane::ConstPtr &msg)
   b2c.noalias() = b3c.cross(b1d).normalized();
   b1c.noalias() = b2c.cross(b3c).normalized();
 
-  const Eigen::Vector3d force_dot = mass_ * (
-      Jinv * (kx.asDiagonal() * e_vel + sdddotdes)
-      + Jinvdot * (kx.asDiagonal() * e_pos + kv.asDiagonal() * e_vel + sddotdes)); // Ignoring kv*e_acc and ki*e_pos terms
-  const Eigen::Vector3d b3c_dot = b3c.cross(force_dot/force.norm()).cross(b3c);
-  const Eigen::Vector3d b1d_dot(-sin(yaw_des_)*yaw_des_dot_, cos(yaw_des_)*yaw_des_dot_, 0);
-  const Eigen::Vector3d b2c_dot = b3c_dot.cross(b1d) + b3c.cross(b1d_dot);
-  const Eigen::Vector3d b1c_dot = b2c_dot.cross(b3c) + b2c.cross(b3c_dot);
+  // Determine angular velocity?
 
   Eigen::Matrix3d Rc;
   Rc << b1c, b2c, b3c;
   Eigen::Quaterniond qdes(Rc);
 
-  Eigen::Matrix3d R_dot;
-  R_dot << b1c_dot, b2c_dot, b3c_dot;
+  //Eigen::Matrix3d R_dot;
+  //R_dot << b1c_dot, b2c_dot, b3c_dot;
 
-  const Eigen::Matrix3d omega_hat = Rc.transpose() * R_dot;
-  Eigen::Vector3d angular_velocity = Eigen::Vector3d(omega_hat(2,1), omega_hat(0,2), omega_hat(1,0));
+  //const Eigen::Matrix3d omega_hat = Rc.transpose() * R_dot;
+  //Eigen::Vector3d angular_velocity = Eigen::Vector3d(omega_hat(2,1), omega_hat(0,2), omega_hat(1,0));
 
   // Only publish if we are in the vision control state
   if (state_ == PREP_TRAJ || state_ == TRAJ || state_ == VISION_CONTROL)
@@ -611,9 +588,9 @@ static void image_update_cb(const cylinder_msgs::ParallelPlane::ConstPtr &msg)
     cmd->orientation.y = qdes.y();
     cmd->orientation.z = qdes.z();
     cmd->orientation.w = qdes.w();
-    cmd->angular_velocity.x = 0*angular_velocity(0);
-    cmd->angular_velocity.y = 0*angular_velocity(1);
-    cmd->angular_velocity.z = 0*angular_velocity(2);
+    cmd->angular_velocity.x = 0; // *angular_velocity(0);
+    cmd->angular_velocity.y = 0; // *angular_velocity(1);
+    cmd->angular_velocity.z = 0; // *angular_velocity(2);
     for(int i = 0; i < 3; i++)
     {
       cmd->kR[i] = kR_[i];
