@@ -8,6 +8,7 @@
 #include <tf/transform_datatypes.h>
 #include <tf/LinearMath/Matrix3x3.h>
 #include <sensor_msgs/Imu.h>
+#include <geometry_msgs/Point.h>
 #include <TooN/TooN.h>
 
 // Custom Includes
@@ -29,7 +30,7 @@ using namespace Eigen;
 #define RESET "\e[0m"
 #define NUM_INF 999999.9
 
-static ros::Publisher pub_features_, pub_pp_;
+static ros::Publisher pub_features_, pub_pp_, pub_z_in_c;
 double r;
 static tf::Quaternion imu_q_;
 static bool imu_info_(false);
@@ -49,7 +50,6 @@ std::list<TooN::Vector<3> > acc_buff;
 std::list<TooN::Vector<3> > omega_buff;
 std::list<TooN::Vector<4> > orientation_buff;
 std::list<ros::Time> time_stamp_buff;
-int imu_semaphore = 0;
 
 // Functions
 static void image_features_cb(const cylinder_msgs::ImageFeatures::ConstPtr &msg)
@@ -202,9 +202,6 @@ static void image_features_cb(const cylinder_msgs::ImageFeatures::ConstPtr &msg)
 
 static void imu_cb(const sensor_msgs::Imu::ConstPtr &msg)
 {
-	// while(imu_semaphore==1) usleep(10);
-	imu_semaphore = 1;
-
 	TooN::Vector<4> q;
 	q[0] = msg->orientation.w;
 	q[1] = msg->orientation.x;
@@ -227,7 +224,6 @@ static void imu_cb(const sensor_msgs::Imu::ConstPtr &msg)
 	orientation_buff.push_front(q);
 	time_stamp_buff.push_front(msg->header.stamp);
 
-	imu_semaphore = 0;
   //tf::quaternionMsgToTF(msg->orientation, imu_q_);
   imu_info_ = true;
 }
@@ -250,16 +246,13 @@ static void cylinder_pose_cb(const cylinder_msgs::CylinderPose::ConstPtr &msg)
   static tf::Vector3 g_in_C, a_in_C, z_in_C, y_in_C, x_in_C;
 
   //Find the measurement
- //Data should be alligned
-  // while(imu_semaphore==1) usleep(10);
-   imu_semaphore = 1;
-// Find aligned measurement, Time
+  //Data should be alligned
+  // Find aligned measurement, Time
   double mdt = NUM_INF;
   std::list<TooN::Vector<3> >::iterator    k1 = acc_buff.begin();
   std::list<TooN::Vector<3> >::iterator    k2 = omega_buff.begin();
   std::list<TooN::Vector<4> >::iterator    k3 = orientation_buff.begin();
   std::list<ros::Time>::iterator           k4 = time_stamp_buff.begin();
-  imu_semaphore = 0;
 
   //Save alligned IMU measurements
   TooN::Vector<3>   ca;
@@ -295,6 +288,13 @@ static void cylinder_pose_cb(const cylinder_msgs::CylinderPose::ConstPtr &msg)
   tf::Matrix3x3 R_IMU(imu_q_);
 
   z_in_C = R_CtoB_.transpose() * R_IMU.transpose() * tf::Vector3(0, 0, 1);
+  
+  geometry_msgs::Point temp;
+  temp.x = z_in_C[0];
+  temp.y = z_in_C[1];
+  temp.z = z_in_C[2];
+  pub_z_in_c.publish(temp);
+  
   // ROS_INFO_THROTTLE(1, "\e[96mz_in_C: {%2.2f, %2.2f, %2.2f}\e[0m", z_in_C[0], z_in_C[1], z_in_C[2]);
 
   tf::vector3MsgToTF(msg->a, a_in_C);
@@ -515,6 +515,7 @@ int main(int argc, char **argv)
   // Publishers
   pub_features_ = n.advertise<cylinder_msgs::CylinderPose>("cylinder_pose", 1);
   pub_pp_ = n.advertise<cylinder_msgs::ParallelPlane>("image_features_pp", 1);
+  pub_z_in_c = n.advertise<geometry_msgs::Point>("z_in_c", 1);
 
   // Subscribers
   ros::Subscriber image_features_sub = n.subscribe("/cylinder_detection/cylinder_features", 1, &image_features_cb, ros::TransportHints().tcpNoDelay());
