@@ -90,7 +90,7 @@ static ros::Publisher pub_vision_status_;
 static ros::Publisher pub_so3_command_;
 static ros::Publisher pub_pwm_command_;
 
-static ros::Publisher pub_force_pos_, pub_force_vel_;
+static ros::Publisher pub_force_pos_, pub_force_vel_, pub_force_cmd_, pub_force_dyn_;
 
 // Vision and Cylinder Stuff
 // static tf::Transform T_Cam_to_Body_ = tf::Transform(tf::Matrix3x3(1,0,0, 0,-1,0, 0,0,-1), tf::Vector3(0,0,0));
@@ -530,27 +530,39 @@ static void image_update_cb(const cylinder_msgs::ParallelPlane::ConstPtr &msg)
     + Jinv * sddotdes
     + Jinvdot * sdot);
 
-  // Vector3d temp = 10000 * mass_ * Jinvdot * sdot;
-  // ROS_INFO_THROTTLE(1, MAGENTA "Jinvdot term: {%2.3f, %2.3f, %2.3f}" RESET, temp(0), temp(1), temp(2));
-  // ROS_INFO_THROTTLE(1, "sddotdes: {%2.2f, %2.2f, %2.2f}", sddotdes(0), sddotdes(1), sddotdes(2));
-
-
   // For now, reduce the thrust magnitude
   // force = fmin(force.norm(), 0.95 * mass_ * g) * force.normalized();
 
   ROS_INFO_THROTTLE(1, GREEN "force/weight {x, y, z} = {%2.2f, %2.2f, %2.2f}, gains mod = {%1.2f, %1.2f, %1.2f, %1.2f}" RESET,
       force(0) / (mass_*gravity_), force(1) / (mass_*gravity_), force(2) / (mass_*gravity_), gains_mod_[0], gains_mod_[1], gains_mod_[2], gains_mod_[3]);
 
-  // Vector3d force1 = mass_ * Jinv * kx.asDiagonal() * e_pos;
-  // ROS_INFO_THROTTLE(1, GREEN "Position component of force: {%2.2f, %2.2f, %2.2f}" RESET, force1(0), force1(1), force1(2));
-  // Vector3d force2 = mass_ * Jinv * kv.asDiagonal() * e_vel + mass_ * Jinvdot * sdot;
-  // ROS_INFO_THROTTLE(1, RED "Velocity component of force: {%2.2f, %2.2f, %2.2f}" RESET, force2(0), force2(1), force2(2));
 
-  // geometry_msgs::Vector3 temp;
-  // temp.x = force1(0); temp.y = force1(1); temp.z = force1(2);
-  // pub_force_pos_.publish(temp);
-  // temp.x = force2(0); temp.y = force2(1); temp.z = force2(2);
-  // pub_force_vel_.publish(temp);
+  //============================//
+  //==== Publish Force Info ====//
+  //============================//
+  
+  geometry_msgs::Vector3 temp;
+  
+  temp.x = force(0); temp.y = force(1); temp.z = force(2);
+  pub_force_cmd_.publish(temp);
+
+  Vector3d force1 = mass_ * Jinv * kx.asDiagonal() * e_pos;
+  temp.x = force1(0); temp.y = force1(1); temp.z = force1(2);
+  pub_force_pos_.publish(temp);
+  // ROS_INFO_THROTTLE(1, GREEN "Position component of force: {%2.2f, %2.2f, %2.2f}" RESET, force1(0), force1(1), force1(2));
+  
+  Vector3d force2 = mass_ * Jinv * kv.asDiagonal() * e_vel;
+  temp.x = force2(0); temp.y = force2(1); temp.z = force2(2);
+  pub_force_vel_.publish(temp);
+  // ROS_INFO_THROTTLE(1, RED "Velocity component of force: {%2.2f, %2.2f, %2.2f}" RESET, force2(0), force2(1), force2(2));
+ 
+  Vector3d force3 = mass_ * Jinvdot * sdot;
+  temp.x = force3(0); temp.y = force3(1); temp.z = force3(2);
+  pub_force_dyn_.publish(temp);
+ 
+  //============================//
+  //============================//
+
 
   Eigen::Vector3d b1c, b2c, b3c;
   Eigen::Vector3d b1d(cos(yaw_des_), sin(yaw_des_), 0);
@@ -860,8 +872,10 @@ int main(int argc, char **argv)
   pub_so3_command_ = n.advertise<quadrotor_msgs::SO3Command>("so3_cmd", 1);
   pub_pwm_command_ = n.advertise<quadrotor_msgs::PWMCommand>("pwm_cmd", 1);
 
-  pub_force_pos_ = n.advertise<geometry_msgs::Vector3>("force/pos", 10);
-  pub_force_vel_ = n.advertise<geometry_msgs::Vector3>("force/vel", 10);
+  pub_force_pos_ = n.advertise<geometry_msgs::Vector3>("force/pos", 1);
+  pub_force_vel_ = n.advertise<geometry_msgs::Vector3>("force/vel", 1);
+  pub_force_cmd_ = n.advertise<geometry_msgs::Vector3>("force/cmd", 1);
+  pub_force_dyn_ = n.advertise<geometry_msgs::Vector3>("force/dyn", 1);
 
   // Subscribers
   ros::Subscriber sub_odom = n.subscribe("odom", 1, &odom_cb, ros::TransportHints().tcpNoDelay());
