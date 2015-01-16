@@ -498,8 +498,8 @@ static void image_update_cb(const cylinder_msgs::ParallelPlane::ConstPtr &msg)
   // yaw_des_ = yaw_off;
   // yaw_des_dot_ = 0;
 
-  // yaw_des_ = traj_goal_.yaw;
-  // yaw_des_dot_ = traj_goal_.yaw_dot;
+  yaw_des_ = traj_goal_.yaw;
+  yaw_des_dot_ = traj_goal_.yaw_dot;
 
   // Useful defs
   static const Vector3d e3(0,0,1);
@@ -533,7 +533,7 @@ static void image_update_cb(const cylinder_msgs::ParallelPlane::ConstPtr &msg)
   // For now, reduce the thrust magnitude
   // force = fmin(force.norm(), 0.95 * mass_ * g) * force.normalized();
 
-  ROS_INFO_THROTTLE(1, GREEN "force/weight {x, y, z} = {%2.2f, %2.2f, %2.2f}, gains mod = {%1.2f, %1.2f, %1.2f, %1.2f}" RESET,
+  ROS_INFO_THROTTLE(1, GREEN "force/weight {x, y, z} = {%2.4f, %2.4f, %2.4f}, gains mod = {%1.2f, %1.2f, %1.2f, %1.2f}" RESET,
       force(0) / (mass_*gravity_), force(1) / (mass_*gravity_), force(2) / (mass_*gravity_), gains_mod_[0], gains_mod_[1], gains_mod_[2], gains_mod_[3]);
 
 
