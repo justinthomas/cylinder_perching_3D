@@ -30,7 +30,7 @@ using namespace Eigen;
 #define RESET "\e[0m"
 #define NUM_INF 999999.9
 
-static ros::Publisher pub_features_, pub_pp_, pub_z_in_c;
+static ros::Publisher pub_features_, pub_pp_;
 double r;
 static tf::Quaternion imu_q_;
 static bool imu_info_(false);
@@ -54,58 +54,23 @@ std::list<ros::Time> time_stamp_buff;
 // Functions
 static void image_features_cb(const cylinder_msgs::ImageFeatures::ConstPtr &msg)
 {
-  Vector4d im_feats(msg->theta1, msg->theta2, msg->rho1, msg->rho2);
-  static Vector4d last_feature_vec = im_feats;
-
-  // ROS_INFO(RED "Features: {%2.2f, %2.2f, %2.2f, %2.2f}" RESET, im_feats[0], im_feats[1], im_feats[2], im_feats[3]);
-
-  // Handle angle wrapping
-  while (last_feature_vec[0] < im_feats[0] - M_PI/2)
-  {
-    last_feature_vec[0] = last_feature_vec[0] + M_PI; // Theta
-    last_feature_vec[2] = - last_feature_vec[2];      // Rho
-  }
-  while (last_feature_vec[0] > im_feats[0] + M_PI/2)
-  {
-    last_feature_vec[0] = last_feature_vec[0] - M_PI; // Theta
-    last_feature_vec[2] = - last_feature_vec[2];      // Rho
-  }
-  while (last_feature_vec[1] < im_feats[1] - M_PI/2)
-  {
-    last_feature_vec[1] = last_feature_vec[1] + M_PI; // Theta
-    last_feature_vec[3] = - last_feature_vec[3];      // Rho
-  }
-  while (last_feature_vec[1] > im_feats[1] + M_PI/2)
-  {
-    last_feature_vec[1] = last_feature_vec[1] - M_PI; // Theta
-    last_feature_vec[3] = - last_feature_vec[3];      // Rho
-  }
-
-  // Could this make the sign of the rhos change?
-
-  // Simple linear filter on the image features
-  im_feats = filt_alpha * im_feats + (1-filt_alpha) * last_feature_vec;
-  last_feature_vec = im_feats;
-
-  // ROS_INFO(GREEN "Filt Fet: {%2.2f, %2.2f, %2.2f, %2.2f}" RESET, im_feats[0], im_feats[1], im_feats[2], im_feats[3]);
-
   double ctheta1, ctheta2, stheta1, stheta2, rho1, rho2;
-  ctheta1 = std::cos(im_feats[0]);
-  stheta1 = std::sin(im_feats[0]);
-  ctheta2 = std::cos(im_feats[1]);
-  stheta2 = std::sin(im_feats[1]);
-  rho1 = im_feats[2];
-  rho2 = im_feats[3];
+  ctheta1 = std::cos(msg->theta1);
+  stheta1 = std::sin(msg->theta1);
+  ctheta2 = std::cos(msg->theta2);
+  stheta2 = std::sin(msg->theta2);
+  rho1 = msg->rho1;
+  rho2 = msg->rho2;
 
   tf::Vector3 n1(ctheta1, stheta1, -1*rho1);
   tf::Vector3 n2(ctheta2, stheta2, -1*rho2);
 
   // We need to make sure that the normal vectors are pointing outwards.
   // The largest rho magnitude should be positive
-  if (fabs(n1[2]) >= fabs(n2[2]))
+  if (fabs(rho1) >= fabs(rho2))
   {
     // The sign of rho1 should be positive (so that the vector points away from the other line in the image)
-    if (-n1[2] < 0)
+    if (n1[2] > 0)
       n1 = -1.0 * n1;
 
     // The dot product should be negative
@@ -114,7 +79,7 @@ static void image_features_cb(const cylinder_msgs::ImageFeatures::ConstPtr &msg)
   }
   else
   {
-    if (-n2[2] < 0)
+    if (n2[2] > 0)
       n2 = -1.0 * n2;
 
     if (tf::tfDot(n1, n2) > 0)
@@ -130,7 +95,7 @@ static void image_features_cb(const cylinder_msgs::ImageFeatures::ConstPtr &msg)
   if (Delta[2] < 0)
   {
     Delta = -1 * Delta;
-    ROS_WARN("Sign of Delta switched");
+    // ROS_WARN("Sign of Delta switched");
   }
   // ROS_INFO_THROTTLE(1, "Delta: {%2.4f, %2.4f, %2.4f}", Delta[0], Delta[1], Delta[2]);
 
@@ -155,7 +120,7 @@ static void image_features_cb(const cylinder_msgs::ImageFeatures::ConstPtr &msg)
   // #### Not a good test
   if (a[1] < 0)
   {
-    ROS_INFO(MAGENTA "Axis switched" RESET);
+    // ROS_INFO(MAGENTA "Axis switched" RESET);
     a = -1.0 * a;
   }
 
@@ -188,10 +153,6 @@ static void image_features_cb(const cylinder_msgs::ImageFeatures::ConstPtr &msg)
   // Publish the info
   cylinder_msgs::CylinderPose cyl_msg;
   cyl_msg.stamp = msg->stamp;
-  // cyl_msg.features.filt.theta1 = im_feats[0];
-  // cyl_msg.features.filt.theta2 = im_feats[1];
-  // cyl_msg.features.filt.rho1 = im_feats[2];
-  // cyl_msg.features.filt.rho2 = im_feats[3];
   cyl_msg.a.x = a[0]; cyl_msg.a.y = a[1]; cyl_msg.a.z = a[2];
   cyl_msg.P0.x = P0[0]; cyl_msg.P0.y = P0[1]; cyl_msg.P0.z = P0[2];
   cyl_msg.P1.x = P1[0]; cyl_msg.P1.y = P1[1]; cyl_msg.P1.z = P1[2];
@@ -283,18 +244,9 @@ static void cylinder_pose_cb(const cylinder_msgs::CylinderPose::ConstPtr &msg)
   orientation_buff.erase(k3, orientation_buff.end());
   time_stamp_buff.erase(k4, time_stamp_buff.end());
 
-  // Ignore yaw from IMU
-  double yaw, pitch, roll;
   tf::Matrix3x3 R_IMU(imu_q_);
-
+  
   z_in_C = R_CtoB_.transpose() * R_IMU.transpose() * tf::Vector3(0, 0, 1);
-  
-  geometry_msgs::Point temp;
-  temp.x = z_in_C[0];
-  temp.y = z_in_C[1];
-  temp.z = z_in_C[2];
-  pub_z_in_c.publish(temp);
-  
   // ROS_INFO_THROTTLE(1, "\e[96mz_in_C: {%2.2f, %2.2f, %2.2f}\e[0m", z_in_C[0], z_in_C[1], z_in_C[2]);
 
   tf::vector3MsgToTF(msg->a, a_in_C);
@@ -515,7 +467,6 @@ int main(int argc, char **argv)
   // Publishers
   pub_features_ = n.advertise<cylinder_msgs::CylinderPose>("cylinder_pose", 1);
   pub_pp_ = n.advertise<cylinder_msgs::ParallelPlane>("image_features_pp", 1);
-  pub_z_in_c = n.advertise<geometry_msgs::Point>("z_in_c", 1);
 
   // Subscribers
   ros::Subscriber image_features_sub = n.subscribe("/cylinder_detection/cylinder_features", 1, &image_features_cb, ros::TransportHints().tcpNoDelay());
