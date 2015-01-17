@@ -271,7 +271,7 @@ static void cylinder_pose_cb(const cylinder_msgs::CylinderPose::ConstPtr &msg)
       a_in_C[2], y_in_C[2], z_pp_in_C[2]);
 
   // The rotation from the virtual frame to the world
-  Eigen::Matrix3d R_VtoW = R_WtoC.transpose() * tf2Eigen(R_VtoC);
+  static const Eigen::Matrix3d R_VtoW = R_WtoC.transpose() * tf2Eigen(R_VtoC);
 
   // We need this to transform points in the camera to a virtual camera that
   // is fixed to the body of the robot
