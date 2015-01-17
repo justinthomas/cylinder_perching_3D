@@ -74,8 +74,9 @@ double traj_time;
 quadrotor_msgs::PositionCommand traj_goal_;
 void updateTrajGoal();
 static std::string traj_filename;
-bool traj_loaded_(false);
+bool traj_loaded_(false), use_traj_gains_(false);
 
+//#include <math.h>
 // Publishers & services
 static ros::Publisher pub_goal_min_jerk_;
 static ros::Publisher pub_goal_distance_;
@@ -150,6 +151,8 @@ static void nanokontrol_cb(const sensor_msgs::Joy::ConstPtr &msg)
   gains_mod_[1] = msg->axes[5];
   gains_mod_[2] = msg->axes[6];
   gains_mod_[3] = msg->axes[7];
+
+  use_traj_gains_ = msg->axes[3] > 0;
 
   if(msg->buttons[estop_button])
   {
@@ -404,12 +407,15 @@ void updateTrajGoal()
 
   pub_traj_goal_.publish(traj_goal_);
 
-  // traj_goal_.kx[0] = traj[i][4][0];
-  // traj_goal_.kx[1] = traj[i][4][1];
-  // traj_goal_.kx[2] = traj[i][4][2];
-  // traj_goal_.kv[0] = traj[i][4][3];
-  // traj_goal_.kv[1] = traj[i][4][4];
-  // traj_goal_.kv[2] = traj[i][4][5];
+  if (traj[i].size() > 4)
+  {
+    traj_goal_.kx[0] = traj[i][4][0];
+    traj_goal_.kx[1] = traj[i][4][1];
+    traj_goal_.kx[2] = traj[i][4][2];
+    traj_goal_.kv[0] = traj[i][4][3];
+    traj_goal_.kv[1] = traj[i][4][4];
+    traj_goal_.kv[2] = traj[i][4][5];
+  }
 
   // ROS_INFO_THROTTLE(1, "Gains: kx: {%2.1f, %2.1f, %2.1f}, kv: {%2.1f, %2.1f, %2.1f}",
   //     traj[i][4][0],
@@ -514,8 +520,16 @@ static void image_update_cb(const cylinder_msgs::ParallelPlane::ConstPtr &msg)
 
   // Gains
   Vector3d kx, kv;
-  kx << kprho + gains_mod_[0], kprho + gains_mod_[0], kpu + gains_mod_[2];
-  kv << kdrho + gains_mod_[1], kdrho + gains_mod_[1], kdu + gains_mod_[3];
+  if (use_traj_gains_)
+  {
+    kx << traj_goal_.kx[0], traj_goal_.kx[1], traj_goal_.kx[2];
+    kv << traj_goal_.kv[0], traj_goal_.kv[1], traj_goal_.kv[2];
+  }
+  else
+  {
+    kx << kprho + gains_mod_[0], kprho + gains_mod_[0], kpu + gains_mod_[2];
+    kv << kdrho + gains_mod_[1], kdrho + gains_mod_[1], kdu + gains_mod_[3];
+  }
 
   // Temp output
   // Vector3d temp = mass_ * R_VtoW * Jinv * (kx.asDiagonal() * e_pos); //  + kv.asDiagonal() * e_vel + sddotdes);
@@ -540,9 +554,9 @@ static void image_update_cb(const cylinder_msgs::ParallelPlane::ConstPtr &msg)
   //============================//
   //==== Publish Force Info ====//
   //============================//
-  
+
   geometry_msgs::Vector3 temp;
-  
+
   temp.x = force(0); temp.y = force(1); temp.z = force(2);
   pub_force_cmd_.publish(temp);
 
@@ -550,16 +564,16 @@ static void image_update_cb(const cylinder_msgs::ParallelPlane::ConstPtr &msg)
   temp.x = force1(0); temp.y = force1(1); temp.z = force1(2);
   pub_force_pos_.publish(temp);
   // ROS_INFO_THROTTLE(1, GREEN "Position component of force: {%2.2f, %2.2f, %2.2f}" RESET, force1(0), force1(1), force1(2));
-  
+
   Vector3d force2 = mass_ * Jinv * kv.asDiagonal() * e_vel;
   temp.x = force2(0); temp.y = force2(1); temp.z = force2(2);
   pub_force_vel_.publish(temp);
   // ROS_INFO_THROTTLE(1, RED "Velocity component of force: {%2.2f, %2.2f, %2.2f}" RESET, force2(0), force2(1), force2(2));
- 
+
   Vector3d force3 = mass_ * Jinvdot * sdot;
   temp.x = force3(0); temp.y = force3(1); temp.z = force3(2);
   pub_force_dyn_.publish(temp);
- 
+
   //============================//
   //============================//
 
