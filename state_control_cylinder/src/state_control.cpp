@@ -147,10 +147,10 @@ static void nanokontrol_cb(const sensor_msgs::Joy::ConstPtr &msg)
     pub_pwm_command_.publish(pwm_cmd);
   }
 
-  gains_mod_[0] = msg->axes[4];
-  gains_mod_[1] = msg->axes[5];
-  gains_mod_[2] = msg->axes[6];
-  gains_mod_[3] = msg->axes[7];
+  gains_mod_[0] = 5 * msg->axes[4];
+  gains_mod_[1] = 3 * msg->axes[5];
+  gains_mod_[2] = 4 * msg->axes[6];
+  gains_mod_[3] = 3 * msg->axes[7];
 
   use_traj_gains_ = msg->axes[3] > 0;
 
@@ -524,11 +524,13 @@ static void image_update_cb(const cylinder_msgs::ParallelPlane::ConstPtr &msg)
   {
     kx << traj_goal_.kx[0], traj_goal_.kx[1], traj_goal_.kx[2];
     kv << traj_goal_.kv[0], traj_goal_.kv[1], traj_goal_.kv[2];
+    ROS_INFO_THROTTLE(1, BLUE "Traj Gains: {kprho, kdrho, kpu, kdu}: {%2.2f, %2.2f, %2.2f, %2.2f}" RESET, kx(0), kv(0), kx(2), kv(2));
   }
   else
   {
     kx << kprho + gains_mod_[0], kprho + gains_mod_[0], kpu + gains_mod_[2];
     kv << kdrho + gains_mod_[1], kdrho + gains_mod_[1], kdu + gains_mod_[3];
+    ROS_INFO_THROTTLE(1, BLUE "Midi Gains: {kprho, kdrho, kpu, kdu}: {%2.2f, %2.2f, %2.2f, %2.2f}" RESET, kx(0), kv(0), kx(2), kv(2));
   }
 
   // Temp output
@@ -833,7 +835,7 @@ int main(int argc, char **argv)
   n.param("gains/ang/y", kOm_[1], 0.13);
   n.param("gains/ang/z", kOm_[2], 0.1);
   ROS_INFO("Attitude gains: kR: {%2.2f, %2.2f, %2.2f}, kOm: {%2.2f, %2.2f, %2.2f}", kR_[0], kR_[1], kR_[2], kOm_[0], kOm_[1], kOm_[2]);
-  n.param("attitude_safety_limit", attitude_safety_limit_, 30 * M_PI / 180);
+  n.param("attitude_safety_limit", attitude_safety_limit_, 25 * M_PI / 180);
 
   // Corrections
   n.param("corrections/kf", corrections_[0], 0.0);
