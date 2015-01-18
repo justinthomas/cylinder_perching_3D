@@ -91,7 +91,7 @@ static ros::Publisher pub_vision_status_;
 static ros::Publisher pub_so3_command_;
 static ros::Publisher pub_pwm_command_;
 
-static ros::Publisher pub_force_pos_, pub_force_vel_, pub_force_cmd_, pub_force_dyn_;
+static ros::Publisher pub_force_pos_, pub_force_vel_, pub_force_cmd_, pub_force_dyn_, pub_force_int_;
 
 // Vision and Cylinder Stuff
 // static tf::Transform T_Cam_to_Body_ = tf::Transform(tf::Matrix3x3(1,0,0, 0,-1,0, 0,0,-1), tf::Vector3(0,0,0));
@@ -99,7 +99,7 @@ static void Jacobians(const Vector3d &P1_inV, const Vector3d &sdot, const Matrix
 double r;
 double kR_[3], kOm_[3], corrections_[3];
 bool enable_motors_, use_external_yaw_;
-double kprho, kpu, kdrho, kdu;
+double kprho, kpu, kdrho, kdu, kirho, kiu;
 double yaw_des_(0), yaw_des_dot_(0);
 ros::Time last_image_update_;
 int camera_rate;
@@ -519,23 +519,28 @@ static void image_update_cb(const cylinder_msgs::ParallelPlane::ConstPtr &msg)
   // ROS_INFO_THROTTLE(1, "\e[93me_vel: {%2.2f, %2.2f, %2.2f}\e[0m", e_vel(0), e_vel(1), e_vel(2));
 
   // Gains
+  Eigen::Vector3d ki(kirho, kirho, kiu);
+  
   Vector3d kx, kv;
   if (use_traj_gains_)
   {
     kx << traj_goal_.kx[0], traj_goal_.kx[1], traj_goal_.kx[2];
     kv << traj_goal_.kv[0], traj_goal_.kv[1], traj_goal_.kv[2];
-    ROS_INFO_THROTTLE(1, BLUE "Traj Gains: {kprho, kdrho, kpu, kdu}: {%2.2f, %2.2f, %2.2f, %2.2f}" RESET, kx(0), kv(0), kx(2), kv(2));
+    ROS_INFO_THROTTLE(1, BLUE "Traj Gains: {kprho, kdrho, kpu, kdu, kirho, kiu}: {%2.2f, %2.2f, %2.2f, %2.2f, %2.2f, %2.2f}" RESET, kx(0), kv(0), kx(2), kv(2), kirho, kiu);
   }
   else
   {
     kx << kprho + gains_mod_[0], kprho + gains_mod_[0], kpu + gains_mod_[2];
     kv << kdrho + gains_mod_[1], kdrho + gains_mod_[1], kdu + gains_mod_[3];
-    ROS_INFO_THROTTLE(1, BLUE "Midi Gains: {kprho, kdrho, kpu, kdu}: {%2.2f, %2.2f, %2.2f, %2.2f}" RESET, kx(0), kv(0), kx(2), kv(2));
+    ROS_INFO_THROTTLE(1, BLUE "Midi Gains: {kprho, kdrho, kpu, kdu, kirho, kiu}: {%2.2f, %2.2f, %2.2f, %2.2f, %2.2f, %2.2f}" RESET, kx(0), kv(0), kx(2), kv(2), kirho, kiu);
   }
 
   // Temp output
   // Vector3d temp = mass_ * R_VtoW * Jinv * (kx.asDiagonal() * e_pos); //  + kv.asDiagonal() * e_vel + sddotdes);
   // ROS_INFO_THROTTLE(1, "\e[93mdelta_force_in_pp: {%2.2f, %2.2f, %2.2f}\e[0m", temp(0), temp(1), temp(2));
+
+  static Eigen::Vector3d eint(0,0,0);
+  eint += ki.asDiagonal()*e_pos;
 
   Matrix3d Jinvdot = - Jinv * Jdot * Jinv;
 
@@ -544,7 +549,8 @@ static void image_update_cb(const cylinder_msgs::ParallelPlane::ConstPtr &msg)
     + Jinv * kx.asDiagonal() * e_pos
     + Jinv * kv.asDiagonal() * e_vel
     + Jinv * sddotdes
-    + Jinvdot * sdot);
+    + Jinvdot * sdot
+    + Jinv * eint);
 
   // For now, reduce the thrust magnitude
   // force = fmin(force.norm(), 0.95 * mass_ * g) * force.normalized();
@@ -575,6 +581,10 @@ static void image_update_cb(const cylinder_msgs::ParallelPlane::ConstPtr &msg)
   Vector3d force3 = mass_ * Jinvdot * sdot;
   temp.x = force3(0); temp.y = force3(1); temp.z = force3(2);
   pub_force_dyn_.publish(temp);
+
+  Vector3d force4 = mass_ * Jinv * ki.asDiagonal() * eint;
+  temp.x = force4(0); temp.y = force4(1); temp.z = force4(2);
+  pub_force_int_.publish(temp);
 
   //============================//
   //============================//
@@ -854,8 +864,10 @@ int main(int argc, char **argv)
   n.param("vision_gains/kdrho", kdrho, 0.0);
   n.param("vision_gains/kpu", kpu, 0.0);
   n.param("vision_gains/kdu", kdu, 0.0);
+  n.param("vision_gains/kirho", kirho, 0.0);
+  n.param("vision_gains/kiu", kiu, 0.0);
   n.param("camera_fps", camera_rate, 50);
-  ROS_INFO("Vision using gains: {kprho: %2.2f, kpu: %2.2f, kdrho: %2.2f, kdu: %2.2f}", kprho, kpu, kdrho, kdu);
+  // ROS_INFO("Vision using gains: {kprho: %2.2f, kpu: %2.2f, kdrho: %2.2f, kdu: %2.2f}", kprho, kpu, kdrho, kdu);
 
   n.param("traj_filename", traj_filename, string(""));
   // Note: traj[t_idx][flat_out][deriv]
@@ -892,6 +904,7 @@ int main(int argc, char **argv)
   pub_force_vel_ = n.advertise<geometry_msgs::Vector3>("force/vel", 1);
   pub_force_cmd_ = n.advertise<geometry_msgs::Vector3>("force/cmd", 1);
   pub_force_dyn_ = n.advertise<geometry_msgs::Vector3>("force/dyn", 1);
+  pub_force_int_ = n.advertise<geometry_msgs::Vector3>("force/int", 1);
 
   // Subscribers
   ros::Subscriber sub_odom = n.subscribe("odom", 1, &odom_cb, ros::TransportHints().tcpNoDelay());

@@ -1,8 +1,10 @@
 vision_gains:
   kprho: 6.0
   kdrho: 3.3
+  kirho: 0.0
   kpu: 6.0
   kdu: 1.1
+  kiu: 0.0
 #  kprho: 5.0
 #  kpu: 5.0
 #  kdrho: 1.7
