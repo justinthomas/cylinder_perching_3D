@@ -65,6 +65,7 @@ static double xoff, yoff, zoff, yaw_off, mass_, gravity_, attitude_safety_limit_
 static bool safety_(true), safety_catch_active(false);
 static geometry_msgs::Point home_;
 std::string gstr;
+sensor_msgs::Joy nk;
 
 // Stuff for trajectory
 #include <string>
@@ -131,6 +132,8 @@ void go_to(const quadrotor_msgs::FlatOutputs goal);
 // Callbacks and functions
 static void nanokontrol_cb(const sensor_msgs::Joy::ConstPtr &msg)
 {
+  nk = *msg;
+
   // double rho_des = -0.39/2*(msg->axes[0]+1) - 0.01;
   // sdes_ = Vector3d(rho_des, rho_des, -0.8*(msg->axes[1]+1));
 
@@ -147,10 +150,10 @@ static void nanokontrol_cb(const sensor_msgs::Joy::ConstPtr &msg)
     pub_pwm_command_.publish(pwm_cmd);
   }
 
-  gains_mod_[0] = 5 * msg->axes[4];
-  gains_mod_[1] = 3 * msg->axes[5];
-  gains_mod_[2] = 4 * msg->axes[6];
-  gains_mod_[3] = 3 * msg->axes[7];
+  gains_mod_[0] = msg->axes[4]+1;
+  gains_mod_[1] = msg->axes[5]+1;
+  gains_mod_[2] = msg->axes[6]+1;
+  gains_mod_[3] = msg->axes[7]+1;
 
   use_traj_gains_ = msg->axes[3] > 0;
 
@@ -499,6 +502,9 @@ static void image_update_cb(const cylinder_msgs::ParallelPlane::ConstPtr &msg)
            sddotdes(traj_goal_.acceleration.x, traj_goal_.acceleration.y, traj_goal_.acceleration.z),
            sdddotdes(traj_goal_.jerk.x, traj_goal_.jerk.y, traj_goal_.jerk.z);
 
+  // For now...
+  // static Vector3d sdes = s;
+
   // Vector3d sdes = sdes_;
   // Vector3d sdotdes(0,0,0), sddotdes(0,0,0), sdddotdes(0,0,0);
   // yaw_des_ = yaw_off;
@@ -511,7 +517,9 @@ static void image_update_cb(const cylinder_msgs::ParallelPlane::ConstPtr &msg)
   static const Vector3d e3(0,0,1);
 
   // Errors
-  Vector3d e_pos(sdes - s), e_vel(sdotdes - sdot);
+  Vector3d s_sign(msg->s_sign[0], msg->s_sign[1], msg->s_sign[2]);
+  Vector3d e_pos = (sdes - s);
+  Vector3d e_vel(sdotdes - sdot);
 
   ROS_INFO_THROTTLE(1, MAGENTA "s    = {%2.2f, %2.2f, %2.2f}" RESET, s(0), s(1), s(2));
   ROS_INFO_THROTTLE(1, MAGENTA "sdes = {%2.2f, %2.2f, %2.2f}" RESET, sdes(0), sdes(1), sdes(2));
@@ -520,7 +528,7 @@ static void image_update_cb(const cylinder_msgs::ParallelPlane::ConstPtr &msg)
 
   // Gains
   Eigen::Vector3d ki(kirho, kirho, kiu);
-  
+
   Vector3d kx, kv;
   if (use_traj_gains_)
   {
@@ -530,8 +538,8 @@ static void image_update_cb(const cylinder_msgs::ParallelPlane::ConstPtr &msg)
   }
   else
   {
-    kx << kprho + gains_mod_[0], kprho + gains_mod_[0], kpu + gains_mod_[2];
-    kv << kdrho + gains_mod_[1], kdrho + gains_mod_[1], kdu + gains_mod_[3];
+    kx << kprho * gains_mod_[0], kprho * gains_mod_[0], kpu * gains_mod_[2];
+    kv << kdrho * gains_mod_[1], kdrho * gains_mod_[1], kdu * gains_mod_[3];
     ROS_INFO_THROTTLE(1, BLUE "Midi Gains: {kprho, kdrho, kpu, kdu, kirho, kiu}: {%2.2f, %2.2f, %2.2f, %2.2f, %2.2f, %2.2f}" RESET, kx(0), kv(0), kx(2), kv(2), kirho, kiu);
   }
 
@@ -540,7 +548,7 @@ static void image_update_cb(const cylinder_msgs::ParallelPlane::ConstPtr &msg)
   // ROS_INFO_THROTTLE(1, "\e[93mdelta_force_in_pp: {%2.2f, %2.2f, %2.2f}\e[0m", temp(0), temp(1), temp(2));
 
   static Eigen::Vector3d eint(0,0,0);
-  eint += ki.asDiagonal()*e_pos;
+  eint += e_pos;
 
   Matrix3d Jinvdot = - Jinv * Jdot * Jinv;
 
@@ -550,7 +558,7 @@ static void image_update_cb(const cylinder_msgs::ParallelPlane::ConstPtr &msg)
     + Jinv * kv.asDiagonal() * e_vel
     + Jinv * sddotdes
     + Jinvdot * sdot
-    + Jinv * eint);
+    + Jinv * ki.asDiagonal() * eint);
 
   // For now, reduce the thrust magnitude
   // force = fmin(force.norm(), 0.95 * mass_ * g) * force.normalized();
