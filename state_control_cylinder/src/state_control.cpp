@@ -487,16 +487,23 @@ static void image_update_cb(const cylinder_msgs::ParallelPlane::ConstPtr &msg)
   double current_yaw = tf::getYaw(qBtoW);
 
   Vector3d P1(msg->P1.x, msg->P1.y, msg->P1.z);
-  Vector3d s(msg->s[0], msg->s[1], msg->s[2]);
-  Vector3d sdot(msg->sdot[0], msg->sdot[1], msg->sdot[2]);
+  Vector3d s = Vector3d(msg->s[0], msg->s[1], msg->s[2]);
+  Vector3d sdot = Vector3d(msg->sdot[0], msg->sdot[1], msg->sdot[2]);
 
   Matrix3d Jinv, Jdot;
+  
+  if (isnan(P1(0)) || isnan(P1(1)) || isnan(P1(2)))
+    ROS_WARN("P1 is nan");
+  if (isnan(sdot(0)) || isnan(sdot(1)) || isnan(sdot(2)))
+    ROS_WARN("sdot is nan");
+  if (isnan(Vector3d(1,1,1).transpose() * R_VtoW * Vector3d(1,1,1)))
+    ROS_WARN("R_VtoW is nan");
+
   Jacobians(P1, sdot, R_VtoW, Jinv, Jdot);
 
   // Matrix3d T = R_VtoW * Jinv;
   // cout << CYAN << "Jinv = " << endl << Jinv << RESET << endl; // cout << BLUE << "T = " << endl << T << RESET << endl;
 
-  // These will eventually be set by a trajectory
   Vector3d sdes(traj_goal_.position.x, traj_goal_.position.y, traj_goal_.position.z),
            sdotdes(traj_goal_.velocity.x, traj_goal_.velocity.y, traj_goal_.velocity.z),
            sddotdes(traj_goal_.acceleration.x, traj_goal_.acceleration.y, traj_goal_.acceleration.z),
@@ -505,11 +512,6 @@ static void image_update_cb(const cylinder_msgs::ParallelPlane::ConstPtr &msg)
   // For now...
   // static Vector3d sdes = s;
 
-  // Vector3d sdes = sdes_;
-  // Vector3d sdotdes(0,0,0), sddotdes(0,0,0), sdddotdes(0,0,0);
-  // yaw_des_ = yaw_off;
-  // yaw_des_dot_ = 0;
-
   yaw_des_ = traj_goal_.yaw;
   yaw_des_dot_ = traj_goal_.yaw_dot;
 
@@ -517,9 +519,11 @@ static void image_update_cb(const cylinder_msgs::ParallelPlane::ConstPtr &msg)
   static const Vector3d e3(0,0,1);
 
   // Errors
-  Vector3d s_sign(msg->s_sign[0], msg->s_sign[1], msg->s_sign[2]);
-  Vector3d e_pos = (sdes - s);
+  Vector3d e_pos(sdes - s);
   Vector3d e_vel(sdotdes - sdot);
+  
+  // In case the trajectory goal has not been set
+  if (isnan(e_pos(0)) || isnan(e_pos(1)) || isnan(e_pos(2))) e_pos = Vector3d(0,0,0);
 
   ROS_INFO_THROTTLE(1, MAGENTA "s    = {%2.2f, %2.2f, %2.2f}" RESET, s(0), s(1), s(2));
   ROS_INFO_THROTTLE(1, MAGENTA "sdes = {%2.2f, %2.2f, %2.2f}" RESET, sdes(0), sdes(1), sdes(2));
@@ -547,8 +551,13 @@ static void image_update_cb(const cylinder_msgs::ParallelPlane::ConstPtr &msg)
   // Vector3d temp = mass_ * R_VtoW * Jinv * (kx.asDiagonal() * e_pos); //  + kv.asDiagonal() * e_vel + sddotdes);
   // ROS_INFO_THROTTLE(1, "\e[93mdelta_force_in_pp: {%2.2f, %2.2f, %2.2f}\e[0m", temp(0), temp(1), temp(2));
 
-  static Eigen::Vector3d eint(0,0,0);
-  eint += e_pos;
+  if (isnan( Vector3d(1,1,1).transpose() * Jinv * Vector3d(1,1,1)))
+    ROS_WARN("Jinv is nan!");
+  
+  static Eigen::Vector3d fint(-0.05, -0.05, 0.12);
+  fint += mass_ * Jinv * ki.asDiagonal() * e_pos;
+
+  ROS_INFO_THROTTLE(1, "fint = {%2.2f, %2.2f, %2.2f}", fint(0), fint(1), fint(2));
 
   Matrix3d Jinvdot = - Jinv * Jdot * Jinv;
 
@@ -557,8 +566,8 @@ static void image_update_cb(const cylinder_msgs::ParallelPlane::ConstPtr &msg)
     + Jinv * kx.asDiagonal() * e_pos
     + Jinv * kv.asDiagonal() * e_vel
     + Jinv * sddotdes
-    + Jinvdot * sdot
-    + Jinv * ki.asDiagonal() * eint);
+    + Jinvdot * sdot)
+    + fint;
 
   // For now, reduce the thrust magnitude
   // force = fmin(force.norm(), 0.95 * mass_ * g) * force.normalized();
@@ -590,8 +599,7 @@ static void image_update_cb(const cylinder_msgs::ParallelPlane::ConstPtr &msg)
   temp.x = force3(0); temp.y = force3(1); temp.z = force3(2);
   pub_force_dyn_.publish(temp);
 
-  Vector3d force4 = mass_ * Jinv * ki.asDiagonal() * eint;
-  temp.x = force4(0); temp.y = force4(1); temp.z = force4(2);
+  temp.x = fint(0); temp.y = fint(1); temp.z = fint(2);
   pub_force_int_.publish(temp);
 
   //============================//
@@ -670,16 +678,17 @@ void Jacobians(const Vector3d &P1_inV, const Vector3d &sdot, const Matrix3d &R_V
   Matrix3d J;
 
   J(0,0) = 0;
-  J(0,1) = (pow(y1,2) + pow(z1,2))/(pow(r,2)*z1 - z1*(pow(y1,2) + pow(z1,2)) + r*y1*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2)));
-  J(0,2) = ((pow(y1,2) + pow(z1,2))*(r*z1 + y1*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2))))/(sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2))*pow(r*y1 - z1*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2)),2));
+  J(0,1) = (pow(y1,2) + pow(z1,2))/((-pow(r,2) + pow(y1,2))*z1 + pow(z1,3) - r*y1*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2)));
+  J(0,2) = -(((pow(y1,2) + pow(z1,2))*(r*z1 + y1*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2))))/(sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2))*pow(r*y1 - z1*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2)),2)));
   J(1,0) = 0;
   J(1,1) = (pow(y1,2) + pow(z1,2))/((-pow(r,2) + pow(y1,2))*z1 + pow(z1,3) + r*y1*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2)));
-  J(1,2) = ((pow(y1,2) + pow(z1,2))*(r*z1 - y1*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2))))/(sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2))*pow(r*y1 + z1*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2)),2));
+  J(1,2) = -(((pow(y1,2) + pow(z1,2))*(-(r*z1) + y1*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2))))/(sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2))*pow(r*y1 + z1*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2)),2)));
   J(2,0) = 1/z1;
   J(2,1) = 0;
   J(2,2) = -(x1/pow(z1,2));
 
   // cout << CYAN << "J = " << endl << J << RESET << endl;
+  // cout << MAGENTA << "{x1, y1, z1, r} = {" << x1 << ", " << y1 << ", " << z1 << ", " << r << "}" << endl;
 
   // Estimate the velocity of p1 in the camera frame
   Vector3d p1dot = J.inverse() * sdot;
@@ -689,8 +698,8 @@ void Jacobians(const Vector3d &P1_inV, const Vector3d &sdot, const Matrix3d &R_V
   z1dot = p1dot(2);
 
   Jdot(0,0) = 0;
-  Jdot(0,1) = (2*(pow(r,2)*z1 - z1*(pow(y1,2) + pow(z1,2)) + r*y1*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2)))*(y1*y1dot + z1*z1dot) - (pow(y1,2) + pow(z1,2))*(r*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2))*y1dot + pow(r,2)*z1dot - (pow(y1,2) + pow(z1,2))*z1dot - 2*z1*(y1*y1dot + z1*z1dot) + (r*y1*(y1*y1dot + z1*z1dot))/sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2))))/pow(pow(r,2)*z1 - z1*(pow(y1,2) + pow(z1,2)) + r*y1*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2)),2);
-  Jdot(0,2) = -((-(pow(y1,6)*z1*y1dot) + 2*pow(y1,7)*z1dot + pow(y1,5)*(r*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2))*y1dot - 3*(pow(r,2) - 2*pow(z1,2))*z1dot) + 3*pow(y1,4)*z1*((pow(r,2) - pow(z1,2))*y1dot + r*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2))*z1dot) + pow(z1,3)*((pow(r,4) - pow(z1,4))*y1dot + r*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2))*(pow(r,2) + 2*pow(z1,2))*z1dot) + pow(y1,2)*z1*(-3*(pow(r,4) - pow(r,2)*pow(z1,2) + pow(z1,4))*y1dot + r*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2))*(-3*pow(r,2) + 5*pow(z1,2))*z1dot) + y1*pow(z1,2)*(3*pow(r,3)*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2))*y1dot + (-3*pow(r,4) + 2*pow(z1,4))*z1dot) + pow(y1,3)*(r*(-pow(r,2) + pow(z1,2))*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2))*y1dot + (pow(r,4) - 3*pow(r,2)*pow(z1,2) + 6*pow(z1,4))*z1dot))/(pow(-pow(r,2) + pow(y1,2) + pow(z1,2),1.5)*pow(-(r*y1) + z1*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2)),3)));
+  Jdot(0,1) = (2*((-pow(r,2) + pow(y1,2))*z1 + pow(z1,3) - r*y1*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2)))*(y1*y1dot + z1*z1dot) - (pow(y1,2) + pow(z1,2))*(2*y1*z1*y1dot - r*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2))*y1dot + (-pow(r,2) + pow(y1,2))*z1dot + 3*pow(z1,2)*z1dot - (r*y1*(y1*y1dot + z1*z1dot))/sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2))))/pow((-pow(r,2) + pow(y1,2))*z1 + pow(z1,3) - r*y1*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2)),2);
+  Jdot(0,2) = (-(pow(y1,6)*z1*y1dot) + 2*pow(y1,7)*z1dot + pow(y1,5)*(r*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2))*y1dot - 3*(pow(r,2) - 2*pow(z1,2))*z1dot) + 3*pow(y1,4)*z1*((pow(r,2) - pow(z1,2))*y1dot + r*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2))*z1dot) + pow(z1,3)*((pow(r,4) - pow(z1,4))*y1dot + r*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2))*(pow(r,2) + 2*pow(z1,2))*z1dot) + pow(y1,2)*z1*(-3*(pow(r,4) - pow(r,2)*pow(z1,2) + pow(z1,4))*y1dot + r*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2))*(-3*pow(r,2) + 5*pow(z1,2))*z1dot) + y1*pow(z1,2)*(3*pow(r,3)*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2))*y1dot + (-3*pow(r,4) + 2*pow(z1,4))*z1dot) + pow(y1,3)*(r*(-pow(r,2) + pow(z1,2))*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2))*y1dot + (pow(r,4) - 3*pow(r,2)*pow(z1,2) + 6*pow(z1,4))*z1dot))/(pow(-pow(r,2) + pow(y1,2) + pow(z1,2),1.5)*pow(-(r*y1) + z1*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2)),3));
   Jdot(1,0) = 0;
   Jdot(1,1) = (2*((-pow(r,2) + pow(y1,2))*z1 + pow(z1,3) + r*y1*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2)))*(y1*y1dot + z1*z1dot) - (pow(y1,2) + pow(z1,2))*(2*y1*z1*y1dot + r*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2))*y1dot + (-pow(r,2) + pow(y1,2))*z1dot + 3*pow(z1,2)*z1dot + (r*y1*(y1*y1dot + z1*z1dot))/sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2))))/pow((-pow(r,2) + pow(y1,2))*z1 + pow(z1,3) + r*y1*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2)),2);
   Jdot(1,2) = -((pow(y1,6)*z1*y1dot - 2*pow(y1,7)*z1dot + pow(y1,5)*(r*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2))*y1dot + 3*(pow(r,2) - 2*pow(z1,2))*z1dot) + 3*pow(y1,4)*z1*((-pow(r,2) + pow(z1,2))*y1dot + r*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2))*z1dot) + pow(z1,3)*((-pow(r,4) + pow(z1,4))*y1dot + r*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2))*(pow(r,2) + 2*pow(z1,2))*z1dot) + pow(y1,2)*z1*(3*(pow(r,4) - pow(r,2)*pow(z1,2) + pow(z1,4))*y1dot + r*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2))*(-3*pow(r,2) + 5*pow(z1,2))*z1dot) + y1*pow(z1,2)*(3*pow(r,3)*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2))*y1dot + (3*pow(r,4) - 2*pow(z1,4))*z1dot) - pow(y1,3)*(r*(pow(r,2) - pow(z1,2))*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2))*y1dot + (pow(r,4) - 3*pow(r,2)*pow(z1,2) + 6*pow(z1,4))*z1dot))/(pow(-pow(r,2) + pow(y1,2) + pow(z1,2),1.5)*pow(r*y1 + z1*sqrt(-pow(r,2) + pow(y1,2) + pow(z1,2)),3)));
@@ -704,6 +713,7 @@ void Jacobians(const Vector3d &P1_inV, const Vector3d &sdot, const Matrix3d &R_V
   J = - J * R_VtoW.transpose();
   Jdot = - Jdot * R_VtoW.transpose();
 
+  // cout << "Det(J): " << J.determinant() << endl;
   Jinv = J.inverse();
 }
 
@@ -866,6 +876,7 @@ int main(int argc, char **argv)
 
   // Radius
   n.param("/cylinder_radius", r, 0.1);
+  ROS_INFO("State control using Cylinder Radius = %2.2f", r);
 
   // Vision gains
   n.param("vision_gains/kprho", kprho, 0.0);
