@@ -1,12 +1,12 @@
 vision_gains:
-  kprho: 7.0
-  kdrho: 2.0
-  kirho: 0.0007 # 0.0002
-  kirho: 0.0 # 0.0002
-  kpu: 4.0
-  kdu: 1.0
-  kiu: 0.00035 # 0.0001
-  kiu: 0.0 # 0.0002
+  kprho: 22.0
+  kdrho: 5.0
+  kirho: 0.0009 # 0.0002
+  # kirho: 0.0 # 0.0002
+  kpu: 9.6
+  kdu: 2.4
+  kiu: 0.00045 # 0.0001
+  # kiu: 0.0 # 0.0002
 #  kprho: 5.0
 #  kpu: 5.0
 #  kdrho: 1.7
@@ -24,14 +24,14 @@ camera_fps: 70
 # Acceleration for the kalman filter
 # max_accel: 1.5
 max_accel: 0.5
-# measurement_noise_rhos: 0.0000022
-# measurement_noise_u: 0.000123
-measurement_noise_rhos: 0.000286
-measurement_noise_u: 0.0014
+measurement_noise_rhos: 0.0004
+measurement_noise_u: 0.002
+measurement_noise_rhos: 0.0004
+measurement_noise_u: 0.002
 
 #traj_filename: "/home/xua/git/cylinder_perching_3D/trajectories/traj_step_rhos.csv"
-#traj_filename: "/home/xua/git/cylinder_perching_3D/trajectories/traj_perch.csv"
+traj_filename: "/home/xua/git/cylinder_perching_3D/trajectories/traj_perch.csv"
 #traj_filename: "/home/xua/git/cylinder_perching_3D/trajectories/traj_inv_grasp.csv"
-traj_filename: "/home/xua/git/cylinder_perching_3D/trajectories/traj_static.csv"
+#traj_filename: "/home/xua/git/cylinder_perching_3D/trajectories/traj_static.csv"
 
 need_odom: false

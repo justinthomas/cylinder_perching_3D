@@ -1,11 +1,11 @@
 <launch>
 
-  <arg name="model" default="quadrotor" />
+  <arg name="model" default="QuadrotorAlpha" />
 
   <group ns="$(arg model)">
     
-    <arg name="cylinder_radius" default="0.1" />
-    <param name="camera_fps" value="30"/>
+    <arg name="cylinder_radius" default="0.04" />
+    <param name="camera_fps" value="70"/>
 
     <node pkg="process_image_features"
       type="process_image_features"

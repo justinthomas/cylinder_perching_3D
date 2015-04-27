@@ -504,8 +504,8 @@ static void image_update_cb(const cylinder_msgs::ParallelPlane::ConstPtr &msg)
   // Matrix3d T = R_VtoW * Jinv;
   // cout << CYAN << "Jinv = " << endl << Jinv << RESET << endl; // cout << BLUE << "T = " << endl << T << RESET << endl;
 
-  Vector3d sdes(traj_goal_.position.x, traj_goal_.position.y, traj_goal_.position.z),
-           sdotdes(traj_goal_.velocity.x, traj_goal_.velocity.y, traj_goal_.velocity.z),
+  Vector3d sdes(traj_goal_.position.x, traj_goal_.position.y, traj_goal_.position.z);
+  Vector3d sdotdes(traj_goal_.velocity.x, traj_goal_.velocity.y, traj_goal_.velocity.z),
            sddotdes(traj_goal_.acceleration.x, traj_goal_.acceleration.y, traj_goal_.acceleration.z),
            sdddotdes(traj_goal_.jerk.x, traj_goal_.jerk.y, traj_goal_.jerk.z);
 
@@ -554,7 +554,8 @@ static void image_update_cb(const cylinder_msgs::ParallelPlane::ConstPtr &msg)
   if (isnan( Vector3d(1,1,1).transpose() * Jinv * Vector3d(1,1,1)))
     ROS_WARN("Jinv is nan!");
   
-  static Eigen::Vector3d fint(-0.05, -0.05, 0.12);
+  static Eigen::Vector3d fint(-0.02, -0.13, 0.0);
+  // static Eigen::Vector3d fint(0, 0, 0);
   fint += mass_ * Jinv * ki.asDiagonal() * e_pos;
 
   ROS_INFO_THROTTLE(1, "fint = {%2.2f, %2.2f, %2.2f}", fint(0), fint(1), fint(2));

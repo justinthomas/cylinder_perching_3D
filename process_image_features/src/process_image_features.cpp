@@ -8,6 +8,7 @@
 #include <tf/transform_datatypes.h>
 #include <tf/LinearMath/Matrix3x3.h>
 #include <sensor_msgs/Imu.h>
+#include <sensor_msgs/Joy.h>
 #include <geometry_msgs/Point.h>
 #include <TooN/TooN.h>
 
@@ -41,8 +42,15 @@ static Eigen::Vector3d tf2Eigen(tf::Vector3 tfvec);
 static double filt_alpha;
 
 // Static transformations
-static const tf::Matrix3x3 R_CtoB_ = tf::Matrix3x3(-sqrt(2)/2,sqrt(2)/2,0, -sqrt(2)/2,-sqrt(2)/2,0, 0,0,1);
+// double ang = 7 * M_PI / 180;
+static const tf::Matrix3x3 R_CtoB_ =
+  tf::Matrix3x3(-sqrt(2)/2,sqrt(2)/2,0, -sqrt(2)/2,-sqrt(2)/2,0, 0,0,1);
+  // * tf::Matrix3x3(cos(ang),0,sin(ang), 0,1,0, -sin(ang),0,cos(ang));
+
 // static const tf::Transform T_CtoB_ = tf::Transform(R_CtoB_, tf::Vector3(-0.05, 0.05, 0));
+
+sensor_msgs::Joy nk;
+bool nk_set(false);
 
 //IMU buffer
 //The delay need to be compensated
@@ -50,6 +58,12 @@ std::list<TooN::Vector<3> > acc_buff;
 std::list<TooN::Vector<3> > omega_buff;
 std::list<TooN::Vector<4> > orientation_buff;
 std::list<ros::Time> time_stamp_buff;
+
+static void nanokontrol_cb(const sensor_msgs::Joy::ConstPtr &msg)
+{
+  nk = *msg;
+  nk_set = true;
+}
 
 // Functions
 static void image_features_cb(const cylinder_msgs::ImageFeatures::ConstPtr &msg)
@@ -220,9 +234,17 @@ static void cylinder_pose_cb(const cylinder_msgs::CylinderPose::ConstPtr &msg)
   TooN::Vector<3>   co;
   TooN::Vector<4>   cq;
   ros::Time kt;
+
+  double toff = -0.0314;
+  //if (nk_set)
+  //  toff = 0.03 * (nk.axes[2]-1);
+  //else 
+  //  toff = 0;
+  //ROS_INFO_THROTTLE(1, GREEN "toff = %2.4f" RESET, toff);
+
   for (; k1 != acc_buff.end(); k1++, k2++, k3++, k4++)
   {
-    double dt = fabs((*k4 - msg->stamp).toSec());
+    double dt = fabs((*k4).toSec() - (msg->stamp).toSec() - toff);
     if (dt < mdt)
     {
       mdt = dt;
@@ -245,8 +267,25 @@ static void cylinder_pose_cb(const cylinder_msgs::CylinderPose::ConstPtr &msg)
   time_stamp_buff.erase(k4, time_stamp_buff.end());
 
   tf::Matrix3x3 R_IMU(imu_q_);
-  
+
   z_in_C = R_CtoB_.transpose() * R_IMU.transpose() * tf::Vector3(0, 0, 1);
+
+  //double ang1, ang2;
+  //if (nk_set)
+  //{
+  //  ang1 = 5*nk.axes[0];
+  //  ang2 = 5*nk.axes[1];
+  //}
+  //else
+  //{
+  //  ang1 = 0;
+  //  ang2 = 0;
+  //}
+  //// ROS_INFO_THROTTLE(1, RED "Angles: %2.2f, %2.2f" RESET, ang1, ang2);
+  //tf::Matrix3x3 Rfix;
+  //Rfix.setRPY(ang1 * M_PI/180, ang2 * M_PI/180, 0);
+  //z_in_C = Rfix * z_in_C;
+  
   // ROS_INFO_THROTTLE(1, "\e[96mz_in_C: {%2.2f, %2.2f, %2.2f}\e[0m", z_in_C[0], z_in_C[1], z_in_C[2]);
 
   tf::vector3MsgToTF(msg->a, a_in_C);
@@ -264,7 +303,7 @@ static void cylinder_pose_cb(const cylinder_msgs::CylinderPose::ConstPtr &msg)
   // cout << "R_WtoC" << endl << R_WtoC << endl;
 
   // Determine the Rotation from the virtual camera to the real camera frame
-  tf::Vector3 z_pp_in_C = tfCross(a_in_C, y_in_C);
+  tf::Vector3 z_pp_in_C = tfCross(a_in_C, y_in_C).normalize();
   tf::Matrix3x3 R_VtoC(
       a_in_C[0], y_in_C[0], z_pp_in_C[0],
       a_in_C[1], y_in_C[1], z_pp_in_C[1],
@@ -313,22 +352,22 @@ static void cylinder_pose_cb(const cylinder_msgs::CylinderPose::ConstPtr &msg)
   kf.processUpdate(dt);
 
   // Switch the measurement vector to our convention for filtering to avoid jumps
-  const KalmanFilter::Measurement_t meas(s(0)*s_sign(0), s(1)*s_sign(1), s(2)*s_sign(2));
+  const KalmanFilter::Measurement_t meas(s(0), s(1), s(2));
   kf.measurementUpdate(meas, dt);
 
   const KalmanFilter::State_t state = kf.getState();
   pp_msg.stamp = msg->stamp;
   // Switch the state vector back to their convention
-  pp_msg.s[0]  = state(0) * s_sign(0);
-  pp_msg.s[1]  = state(1) * s_sign(1);
-  pp_msg.s[2]  = state(2) * s_sign(2);
-  pp_msg.sdot[0] = state(3) * s_sign(0);
-  pp_msg.sdot[1] = state(4) * s_sign(1);
-  pp_msg.sdot[2] = state(5) * s_sign(2);;
+  pp_msg.s[0]  = state(0);
+  pp_msg.s[1]  = state(1);
+  pp_msg.s[2]  = state(2);
+  pp_msg.sdot[0] = state(3);
+  pp_msg.sdot[1] = state(4);
+  pp_msg.sdot[2] = state(5);;
 
-  pp_msg.s_sign[0] = s_sign(0);
-  pp_msg.s_sign[1] = s_sign(1);
-  pp_msg.s_sign[2] = s_sign(2);
+  pp_msg.s_sign[0] = 1;
+  pp_msg.s_sign[1] = 1;
+  pp_msg.s_sign[2] = 1;
 
   // Load the quaternions
   Eigen::Quaterniond qVtoW(R_VtoW);
@@ -398,17 +437,17 @@ void pp_features(const double &r, const Eigen::Vector3d &P0, const Eigen::Vector
     theta1 = atan2(stheta1, ctheta1);
     theta2 = atan2(stheta2, ctheta2);
 
-    // Handle the case when theta1 or theta2 are less than zero (we want them to both be = M_PI / 2)
-    s_sign << 1, 1, 1;
-
     if (theta1 <= 0)
-      s_sign(0) = -1;
+    {
+      rho1 = -rho1;
+      theta1 = theta1 + M_PI;
+    }
 
     if (theta2 <= 0)
-    	s_sign(1) = -1;
-
-    if (fabs(theta1 * s_sign(0) - M_PI / 2) > 0.01 || fabs(theta2 * s_sign(1) - M_PI / 2) > 0.01)
-      cout << "Angle is wrong: theta1 = " << theta1 * s_sign(0) << ", theta2 = " << theta2 * s_sign(1) << endl;
+    {
+      rho2 = -rho2;
+      theta2 = theta2 + M_PI;
+    }
 
     // By default, we are putting this in the x-left, y-up frame
     double u = P1_inV(0) / P1_inV(2);
@@ -425,7 +464,7 @@ int main(int argc, char **argv)
   ros::NodeHandle n;
 
   // Parameters
-  n.param("cylinder_radius", r, 0.1);
+  n.param("/cylinder_radius", r, 0.1);
   ROS_INFO("Process_image_features using cylinder_radius = %2.2f", r);
 
   // For prefiltering the image measurements
@@ -472,6 +511,7 @@ int main(int argc, char **argv)
   ros::Subscriber image_features_sub = n.subscribe("/cylinder_detection/cylinder_features", 1, &image_features_cb, ros::TransportHints().tcpNoDelay());
   ros::Subscriber sub_imu = n.subscribe("quad_decode_msg/imu", 1, &imu_cb, ros::TransportHints().tcpNoDelay());
   ros::Subscriber cylinder_pose = n.subscribe("cylinder_pose", 1, &cylinder_pose_cb, ros::TransportHints().tcpNoDelay());
+  ros::Subscriber sub_nanokontrol = n.subscribe("/nanokontrol2", 1, nanokontrol_cb, ros::TransportHints().tcpNoDelay());
 
   ros::spin();
   return 0;
