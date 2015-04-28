@@ -23,6 +23,7 @@
 #include <quadrotor_msgs/PositionCommand.h>
 #include <quadrotor_msgs/SO3Command.h>
 #include <quadrotor_msgs/PWMCommand.h>
+#include <quadrotor_msgs/OutputData.h>
 #include "nano_kontrol2.h"
 #include <trajectory.h>
 #include <cylinder_msgs/ImageFeatures.h>
@@ -66,6 +67,7 @@ static bool safety_(true), safety_catch_active(false);
 static geometry_msgs::Point home_;
 std::string gstr;
 sensor_msgs::Joy nk;
+static bool nk_set(false);
 
 // Stuff for trajectory
 #include <string>
@@ -132,6 +134,7 @@ void go_to(const quadrotor_msgs::FlatOutputs goal);
 // Callbacks and functions
 static void nanokontrol_cb(const sensor_msgs::Joy::ConstPtr &msg)
 {
+  nk_set = true;
   nk = *msg;
 
   // double rho_des = -0.39/2*(msg->axes[0]+1) - 0.01;
@@ -477,6 +480,25 @@ static void imu_cb(const sensor_msgs::Imu::ConstPtr &msg)
   }
 }
 
+static void output_data_cb(const quadrotor_msgs::OutputData::ConstPtr &msg)
+{
+  if (!nk_set)
+  {
+    if(msg->radio_channel[7] > 0)
+    {
+      quadrotor_msgs::PWMCommand pwm_cmd;
+      pwm_cmd.pwm[0] = 0.1;
+      pub_pwm_command_.publish(pwm_cmd);
+    }
+    else
+    {
+      quadrotor_msgs::PWMCommand pwm_cmd;
+      pwm_cmd.pwm[0] = 0.4;
+      pub_pwm_command_.publish(pwm_cmd);
+    }
+  }
+}
+
 static void image_update_cb(const cylinder_msgs::ParallelPlane::ConstPtr &msg)
 {
   vision_info_ = true;
@@ -491,7 +513,7 @@ static void image_update_cb(const cylinder_msgs::ParallelPlane::ConstPtr &msg)
   Vector3d sdot = Vector3d(msg->sdot[0], msg->sdot[1], msg->sdot[2]);
 
   Matrix3d Jinv, Jdot;
-  
+
   if (isnan(P1(0)) || isnan(P1(1)) || isnan(P1(2)))
     ROS_WARN("P1 is nan");
   if (isnan(sdot(0)) || isnan(sdot(1)) || isnan(sdot(2)))
@@ -521,7 +543,7 @@ static void image_update_cb(const cylinder_msgs::ParallelPlane::ConstPtr &msg)
   // Errors
   Vector3d e_pos(sdes - s);
   Vector3d e_vel(sdotdes - sdot);
-  
+
   // In case the trajectory goal has not been set
   if (isnan(e_pos(0)) || isnan(e_pos(1)) || isnan(e_pos(2))) e_pos = Vector3d(0,0,0);
 
@@ -553,7 +575,7 @@ static void image_update_cb(const cylinder_msgs::ParallelPlane::ConstPtr &msg)
 
   if (isnan( Vector3d(1,1,1).transpose() * Jinv * Vector3d(1,1,1)))
     ROS_WARN("Jinv is nan!");
-  
+
   static Eigen::Vector3d fint(-0.02, -0.13, 0.0);
   // static Eigen::Vector3d fint(0, 0, 0);
   fint += mass_ * Jinv * ki.asDiagonal() * e_pos;
@@ -931,6 +953,7 @@ int main(int argc, char **argv)
   ros::Subscriber sub_imu = n.subscribe("imu", 1, &imu_cb, ros::TransportHints().tcpNoDelay());
   ros::Subscriber sub_nanokontrol = n.subscribe("/nanokontrol2", 1, nanokontrol_cb, ros::TransportHints().tcpNoDelay());
   ros::Subscriber sub_vision = n.subscribe("image_features_pp", 1, &image_update_cb, ros::TransportHints().tcpNoDelay());
+  ros::Subscriber sub_output = n.subscribe("output_data", 1, &output_data_cb, ros::TransportHints().tcpNoDelay());
 
   // Switch to null_tracker so that the trackers do not publish so3_commands
   controllers_manager::Transition transition_cmd;

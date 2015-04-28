@@ -40,5 +40,13 @@
       <remap from="~from_robot" to="from_robot"/>
     </node>
 
+    <node pkg="state_control_cylinder"
+      type="manual_servo"
+      name="manual_servo"
+      output="screen">
+      <remap from="~output_data" to="quad_decode_msg/output_data"/>
+      <remap from="~pwm_cmd" to="quad_encode_msg/pwm_cmd"/>
+    </node>
+
   </group>
 </launch>

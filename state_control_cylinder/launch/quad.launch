@@ -99,6 +99,7 @@
       <remap from="~imu" to="quad_decode_msg/imu"/>
       <remap from="~odom" to="odom"/>
       <remap from="~image_features_pp" to="image_features_pp"/>
+      <remap from="~output_data" to="quad_decode_msg/output_data"/>
 
       <!-- Service Remappings -->
       <remap from="~controllers_manager/transition" to="controllers_manager/transition"/>
