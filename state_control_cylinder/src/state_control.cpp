@@ -69,6 +69,7 @@ std::string gstr;
 sensor_msgs::Joy nk;
 static bool nk_set(false);
 double radio_channel_[8];
+bool serial_;
 
 // Stuff for trajectory
 #include <string>
@@ -486,7 +487,7 @@ static void imu_cb(const sensor_msgs::Imu::ConstPtr &msg)
     double scale = 255.0 / 2.0;
     double roll  = (radio_channel_[0] / scale - 1.0) * rc_max_angle;
     double pitch = (radio_channel_[1] / scale - 1.0) * rc_max_angle;
-    Eigen::Quaterniond q(AngleAxisd(roll,  Vector3d::UnitY()) * AngleAxisd(pitch, Vector3d::UnitX());
+    Eigen::Quaterniond q(AngleAxisd(roll,  Vector3d::UnitY()) * AngleAxisd(pitch, Vector3d::UnitX()));
     double rc_max_yawrate = 10.0 * M_PI / 180.0;
     double yawrate = (radio_channel_[3] / scale - 1.0) * rc_max_yawrate;
 
