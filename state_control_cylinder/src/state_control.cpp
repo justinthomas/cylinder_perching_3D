@@ -68,6 +68,7 @@ static geometry_msgs::Point home_;
 std::string gstr;
 sensor_msgs::Joy nk;
 static bool nk_set(false);
+double radio_channel_[8];
 
 // Stuff for trajectory
 #include <string>
@@ -478,10 +479,54 @@ static void imu_cb(const sensor_msgs::Imu::ConstPtr &msg)
     ROS_WARN("Odometry seems to have dropped. Attempting to recover...");
     recovery();
   }
+
+  if (state_ == RECOVERY)
+  {
+    double rc_max_angle = 20.0 * M_PI / 180.0;
+    double scale = 255.0 / 2.0;
+    double roll  = (radio_channel_[0] / scale - 1.0) * rc_max_angle;
+    double pitch = (radio_channel_[1] / scale - 1.0) * rc_max_angle;
+    Eigen::Quaterniond q(AngleAxisd(roll,  Vector3d::UnitY()) * AngleAxisd(pitch, Vector3d::UnitX());
+    double rc_max_yawrate = 10.0 * M_PI / 180.0;
+    double yawrate = (radio_channel_[3] / scale - 1.0) * rc_max_yawrate;
+
+    // Create and publish the so3_command
+    quadrotor_msgs::SO3Command::Ptr cmd(new quadrotor_msgs::SO3Command);
+    cmd->header.stamp = ros::Time::now();
+    cmd->force.x = 0;
+    cmd->force.y = 0;
+    cmd->force.z = 0.9 * mass_ * gravity_;
+
+    cmd->orientation.x = q.x();
+    cmd->orientation.y = q.y();
+    cmd->orientation.z = q.z();
+    cmd->orientation.w = q.w();
+    cmd->angular_velocity.x = 0;
+    cmd->angular_velocity.y = 0;
+    cmd->angular_velocity.z = yawrate;
+    for(int i = 0; i < 3; i++)
+    {
+      cmd->kR[i] = kR_[i];
+      cmd->kOm[i] = kOm_[i];
+    }
+    cmd->aux.current_yaw = 0;
+    cmd->aux.kf_correction = corrections_[0];
+    cmd->aux.angle_corrections[0] = corrections_[1];
+    cmd->aux.angle_corrections[1] = corrections_[2];
+    cmd->aux.enable_motors = true;
+    cmd->aux.use_external_yaw = true;
+
+    pub_so3_command_.publish(cmd);
+  }
 }
 
 static void output_data_cb(const quadrotor_msgs::OutputData::ConstPtr &msg)
 {
+  for (unsigned int i = 0; i < 8; i++)
+    radio_channel_[i] = msg->radio_channel[i];
+
+  serial_ = radio_channel_[4] > 0;
+
   if (!nk_set)
   {
     if(msg->radio_channel[7] > 0)
