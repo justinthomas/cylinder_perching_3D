@@ -116,6 +116,7 @@ static geometry_msgs::Point pos_;
 static geometry_msgs::Vector3 vel_;
 static geometry_msgs::Quaternion ori_;
 static tf::Quaternion imu_q_;
+static double imu_yaw_;
 static bool have_odom_(false), imu_info_ (false), vision_info_(false), need_odom_(true);
 ros::Time last_odom_time_;
 
@@ -439,6 +440,11 @@ static void imu_cb(const sensor_msgs::Imu::ConstPtr &msg)
   imu_info_ = true;
   tf::quaternionMsgToTF(msg->orientation, imu_q_);
 
+  // Determine a geodesic angle from hover at the same yaw
+  double roll, pitch, yaw;
+  tf::Matrix3x3(imu_q_).getEulerYPR(yaw, pitch, roll);
+  imu_yaw_ = yaw;
+
   // If we are currently executing a trajectory, update the setpoint
   if (state_ == TRAJ)
   {
@@ -450,11 +456,7 @@ static void imu_cb(const sensor_msgs::Imu::ConstPtr &msg)
   {
     // Declarations
     tf::Quaternion q;
-    double roll, pitch, yaw;
     tf::Matrix3x3 R;
-
-    // Determine a geodesic angle from hover at the same yaw
-    tf::Matrix3x3(imu_q_).getEulerYPR(yaw, pitch, roll);
     R.setEulerYPR(0, pitch, roll);
     double geodesic = std::fabs( std::acos(0.5 * (R[0][0] + R[1][1] + R[2][2] - 1)));
 
@@ -480,16 +482,28 @@ static void imu_cb(const sensor_msgs::Imu::ConstPtr &msg)
     ROS_WARN("Odometry seems to have dropped. Attempting to recover...");
     recovery();
   }
+}
 
+static void output_data_cb(const quadrotor_msgs::OutputData::ConstPtr &msg)
+{
+  for (unsigned int i = 0; i < 8; i++)
+    radio_channel_[i] = msg->radio_channel[i];
+
+  serial_ = radio_channel_[4] > 0;
+
+  static controller_state last_state = NONE;
   if (state_ == RECOVERY)
   {
-    double rc_max_angle = 20.0 * M_PI / 180.0;
+    double rc_max_angle = 10.0 * M_PI / 180.0;
     double scale = 255.0 / 2.0;
-    double roll  = (radio_channel_[0] / scale - 1.0) * rc_max_angle;
-    double pitch = (radio_channel_[1] / scale - 1.0) * rc_max_angle;
-    Eigen::Quaterniond q(AngleAxisd(roll,  Vector3d::UnitY()) * AngleAxisd(pitch, Vector3d::UnitX()));
-    double rc_max_yawrate = 10.0 * M_PI / 180.0;
-    double yawrate = (radio_channel_[3] / scale - 1.0) * rc_max_yawrate;
+    double roll  = (radio_channel_[1] / scale - 1.0) * rc_max_angle;
+    double pitch = - (radio_channel_[0] / scale - 1.0) * rc_max_angle;
+
+    double rc_max_yawrate = 50.0 * M_PI / 180.0;
+    static double yaw = imu_yaw_;
+    yaw = last_state == RECOVERY ? yaw : imu_yaw_;
+    yaw += -(radio_channel_[3] / scale - 1.0) * rc_max_yawrate / 100.0 ;
+    Eigen::Quaterniond q(AngleAxisd(yaw, Vector3d::UnitZ()) * AngleAxisd(pitch, Vector3d::UnitY()) * AngleAxisd(roll,  Vector3d::UnitX()));
 
     // Create and publish the so3_command
     quadrotor_msgs::SO3Command::Ptr cmd(new quadrotor_msgs::SO3Command);
@@ -504,32 +518,25 @@ static void imu_cb(const sensor_msgs::Imu::ConstPtr &msg)
     cmd->orientation.w = q.w();
     cmd->angular_velocity.x = 0;
     cmd->angular_velocity.y = 0;
-    cmd->angular_velocity.z = yawrate;
+    cmd->angular_velocity.z = 0;
     for(int i = 0; i < 3; i++)
     {
       cmd->kR[i] = kR_[i];
       cmd->kOm[i] = kOm_[i];
     }
-    cmd->aux.current_yaw = 0;
+    // cmd->aux.current_yaw = 0;
     cmd->aux.kf_correction = corrections_[0];
     cmd->aux.angle_corrections[0] = corrections_[1];
     cmd->aux.angle_corrections[1] = corrections_[2];
     cmd->aux.enable_motors = true;
-    cmd->aux.use_external_yaw = true;
+    cmd->aux.use_external_yaw = false;
 
     pub_so3_command_.publish(cmd);
   }
-}
+  last_state = state_;
 
-static void output_data_cb(const quadrotor_msgs::OutputData::ConstPtr &msg)
-{
-  for (unsigned int i = 0; i < 8; i++)
-    radio_channel_[i] = msg->radio_channel[i];
-
-  serial_ = radio_channel_[4] > 0;
-
-  if (!nk_set)
-  {
+  // if (!nk_set)
+  // {
     if(msg->radio_channel[7] > 0)
     {
       quadrotor_msgs::PWMCommand pwm_cmd;
@@ -542,7 +549,7 @@ static void output_data_cb(const quadrotor_msgs::OutputData::ConstPtr &msg)
       pwm_cmd.pwm[0] = 0.4;
       pub_pwm_command_.publish(pwm_cmd);
     }
-  }
+  // }
 }
 
 static void image_update_cb(const cylinder_msgs::ParallelPlane::ConstPtr &msg)
@@ -818,6 +825,9 @@ void recovery()
 {
   // We do not want to re-enable the motors if the ESTOP has been triggered
   if (state_ == ESTOP)
+    return;
+
+  if (state_ == INIT || state_ == NONE || state_ == ESTOP)
     return;
 
   state_ = RECOVERY;
