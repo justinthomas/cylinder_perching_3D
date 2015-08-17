@@ -2,6 +2,7 @@
 
   <!-- Giuseppe's stuff -->
   <include file="$(find cylinder_detection)/launch/cylinder_detection.launch">
+    <arg name="expose_us" default="9000"/> <!-- G had 9000 -->  <!-- 400 for outside -->
   </include>
 
   <arg name="model" default="QuadrotorAlpha" />
