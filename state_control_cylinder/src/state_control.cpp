@@ -90,6 +90,8 @@ static ros::Publisher pub_vision_status_;
 static ros::Publisher pub_so3_command_;
 static ros::Publisher pub_pwm_command_;
 
+static ros::Publisher pub_force_pos_, pub_force_vel_;
+
 // Vision and Cylinder Stuff
 // static tf::Transform T_Cam_to_Body_ = tf::Transform(tf::Matrix3x3(1,0,0, 0,-1,0, 0,0,-1), tf::Vector3(0,0,0));
 static void Jacobians(const Vector3d &P1_inV, const Vector3d &sdot, const Matrix3d &R_VtoW, Matrix3d &Jinv, Matrix3d &Jdot);
@@ -101,6 +103,7 @@ double yaw_des_(0), yaw_des_dot_(0);
 ros::Time last_image_update_;
 int camera_rate;
 Vector3d sdes_(-0.1, -0.1, 0.1);
+double gains_scale_[4];
 
 // Quadrotor Pose
 static geometry_msgs::Point pos_;
@@ -142,6 +145,11 @@ static void nanokontrol_cb(const sensor_msgs::Joy::ConstPtr &msg)
     pwm_cmd.pwm[0] = 0.4;
     pub_pwm_command_.publish(pwm_cmd);
   }
+
+  gains_scale_[0] = (msg->axes[4]+1);
+  gains_scale_[1] = (msg->axes[5]+1);
+  gains_scale_[2] = (msg->axes[6]+1);
+  gains_scale_[3] = (msg->axes[7]+1);
 
   if(msg->buttons[estop_button])
   {
@@ -511,8 +519,8 @@ static void image_update_cb(const cylinder_msgs::ParallelPlane::ConstPtr &msg)
 
   // Gains
   Vector3d kx, kv;
-  kx << kprho, kprho, kpu;
-  kv << kdrho, kdrho, kdu;
+  kx << kprho * gains_scale_[0], kprho * gains_scale_[0], kpu * gains_scale_[2];
+  kv << kdrho * gains_scale_[1], kdrho * gains_scale_[1], kdu * gains_scale_[3];
 
   // Temp output
   // Vector3d temp = mass_ * R_VtoW * Jinv * (kx.asDiagonal() * e_pos); //  + kv.asDiagonal() * e_vel + sddotdes);
@@ -547,13 +555,19 @@ static void image_update_cb(const cylinder_msgs::ParallelPlane::ConstPtr &msg)
   // For now, reduce the thrust magnitude
   // force = fmin(force.norm(), 0.95 * mass_ * g) * force.normalized();
 
-  ROS_INFO_THROTTLE(1, GREEN "force/weight {x, y, z} = {%2.2f, %2.2f, %2.2f}" RESET, 
-      force(0) / (mass_*gravity_), force(1) / (mass_*gravity_), force(2) / (mass_*gravity_));
+  ROS_INFO_THROTTLE(1, GREEN "force/weight {x, y, z} = {%2.2f, %2.2f, %2.2f}, gains scale = {%1.2f, %1.2f, %1.2f, %1.2f}" RESET,
+      force(0) / (mass_*gravity_), force(1) / (mass_*gravity_), force(2) / (mass_*gravity_), gains_scale_[0], gains_scale_[1], gains_scale_[2], gains_scale_[3]);
 
-  // Vector3d force1 = mass_ * Jinv * kx.asDiagonal() * e_pos;
+  Vector3d force1 = mass_ * Jinv * kx.asDiagonal() * e_pos;
   // ROS_INFO_THROTTLE(1, GREEN "Position component of force: {%2.2f, %2.2f, %2.2f}" RESET, force1(0), force1(1), force1(2));
-  // Vector3d force2 = mass_ * Jinv * kv.asDiagonal() * e_vel + mass_ * Jinvdot * sdot;
+  Vector3d force2 = mass_ * Jinv * kv.asDiagonal() * e_vel + mass_ * Jinvdot * sdot;
   // ROS_INFO_THROTTLE(1, RED "Velocity component of force: {%2.2f, %2.2f, %2.2f}" RESET, force2(0), force2(1), force2(2));
+
+  geometry_msgs::Vector3 temp;
+  temp.x = force1(0); temp.y = force1(1); temp.z = force1(2);
+  pub_force_pos_.publish(temp);
+  temp.x = force2(0); temp.y = force2(1); temp.z = force2(2);
+  pub_force_vel_.publish(temp);
 
   Eigen::Vector3d b1c, b2c, b3c;
   Eigen::Vector3d b1d(cos(yaw_des_), sin(yaw_des_), 0);
@@ -662,13 +676,12 @@ void Jacobians(const Vector3d &P1_inV, const Vector3d &sdot, const Matrix3d &R_V
   Jdot(2,2) = (-(z1*x1dot) + 2*x1*z1dot)/pow(z1,3);
 
   // Now, apply rotations to the world frame
-  J = J * R_VtoW.transpose();
-  Jdot = Jdot * R_VtoW.transpose();
-
   // Note: The minus sign gives us the velocity of the robot relative to P1
   // instead of the velocity of P1 relative to the robot
-  Jinv = - J.inverse();
-  Jdot = - Jdot;
+  J = - J * R_VtoW.transpose();
+  Jdot = - Jdot * R_VtoW.transpose();
+
+  Jinv = J.inverse();
 }
 
 void hover_at(const geometry_msgs::Point goal)
@@ -869,6 +882,9 @@ int main(int argc, char **argv)
   pub_estop_ = n.advertise<std_msgs::Empty>("estop", 1);
   pub_so3_command_ = n.advertise<quadrotor_msgs::SO3Command>("so3_cmd", 1);
   pub_pwm_command_ = n.advertise<quadrotor_msgs::PWMCommand>("pwm_cmd", 1);
+
+  pub_force_pos_ = n.advertise<geometry_msgs::Vector3>("force/pos", 10);
+  pub_force_vel_ = n.advertise<geometry_msgs::Vector3>("force/vel", 10);
 
   // Subscribers
   ros::Subscriber sub_odom = n.subscribe("odom", 1, &odom_cb, ros::TransportHints().tcpNoDelay());

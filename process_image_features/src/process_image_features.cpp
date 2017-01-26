@@ -326,7 +326,7 @@ static void cylinder_pose_cb(const cylinder_msgs::CylinderPose::ConstPtr &msg)
 
   // We need this to transform points in the camera to a virtual camera that
   // is fixed to the body of the robot
-  tf::Vector3 t_Cam_Shift(0.0, -0.06, 0.015);
+  tf::Vector3 t_Cam_Shift(0.0, -0.06, 0.02);
 
   tf::Vector3 P0_inC(msg->P0.x, msg->P0.y, msg->P0.z);
   tf::Vector3 P0_inV = R_VtoC.transpose() * (P0_inC + t_Cam_Shift);

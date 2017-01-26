@@ -9,7 +9,7 @@
 
   <group ns="$(arg model)">
 
-    <param name="cylinder_radius" value="0.048" /> <!-- 96mm -->
+    <param name="cylinder_radius" value="0.04" /> <!-- r= 0.048 ; d= 96mm --> <!-- r = 0.036 outside -->
     <param name="mass" value="$(arg mass)" />
 
     <node pkg="nodelet" type="nodelet" name="standalone_nodelet" args="manager" output="screen">
@@ -57,7 +57,7 @@
       <remap from="~cmd" to="position_cmd"/>
     </node>
 
-    <node pkg="nodelet"
+    <!-- node pkg="nodelet"
       type="nodelet"
       args="load so3_control/SO3ControlNodelet standalone_nodelet"
       name="so3_control"
@@ -70,7 +70,7 @@
       <remap from="~so3_cmd" to="so3_cmd"/>
       <param name="mass" value="$(arg mass)" />
       <rosparam file="$(find state_control_cylinder)/config/hummingbird_gains.yaml"/>
-    </node>
+    </node -->
 
     <!-- This is the state control node -->
     <rosparam file="$(find state_control_cylinder)/config/vision_params.yaml" />

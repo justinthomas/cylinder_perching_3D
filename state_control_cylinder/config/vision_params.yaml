@@ -1,24 +1,26 @@
 vision_gains:
-  kprho: 5.0
-  kpu: 1.0
+  kprho: 8.1
   kdrho: 1.7
-  kdu: 0.14
+  kpu: 3.76
+  kdu: 0.25
 #  kprho: 5.0
 #  kpu: 5.0
 #  kdrho: 1.7
 #  kdu: 0.7
+
+#  kprho: 0.0
+#  kpu: 0.0
+#  kdrho: 0.0
+#  kdu: 0.0
 
 alpha: 1.0
 
 camera_fps: 70
 
 # Acceleration for the kalman filter
-max_accel: 0.5
-measurement_noise_rhos: 0.0015
-#measurement_noise_rhos: 0.0023
-#measurement_noise_rhos: 0.0046
-measurement_noise_u: 0.004
-#measurement_noise_u: 0.05
+max_accel: 1.5
+measurement_noise_rhos: 0.0000022
+measurement_noise_u: 0.0002021
 
 traj_filename: "/home/xua/git/cylinder_perching_3D/trajectories/traj_perch.csv"
 
